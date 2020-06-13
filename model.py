@@ -1,13 +1,13 @@
 import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dense, Flatten, Conv2D
-
+import numpy as np
 
 mnist = tf.keras.datasets.mnist
 
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-print(x_train[11])
+print(x_train[np.random.randint(11,1111)])
 # make data
 train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train)).shuffle(1000).batch(32)
 
@@ -32,4 +32,4 @@ class VanillaCNN(Model):
 model = VanillaCNN()   
 model.__init___
 
-print(model.call(x_train[22]))
+pred = model.call(x_train[22])

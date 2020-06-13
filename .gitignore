@@ -1,3 +1,7 @@
+# This is personal  O.o
+.vscode
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
