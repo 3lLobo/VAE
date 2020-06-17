@@ -14,10 +14,11 @@ class VanillaVAE(Model):
             @base_depth: number of filters for convolution layers
         """
         super().__init__()
-
+        self.channels = 1
         # Define the encoder
         self.encoder = tf.keras.Sequential(
-            Input(shape=(input_dim, input_dim))
+            Input(shape=(input_dim, input_dim, self.channels)),
+            Conv2D(base_depth*2, 3, activation='relu'),
             Conv2D(base_depth, 3, activation='relu'),
             Flatten(),
             Dense(hidden_dim, activation='relu'),
@@ -26,9 +27,11 @@ class VanillaVAE(Model):
 
         # Define the decoder
         self.decoder = tf.keras.Sequential(
-            Input(shape=(latent_dim, latent_dim)),
+            Input(shape=(latent_dim)),
             Dense(hidden_dim),
-            Conv2DTranspose(base_depth, 3)
+            Conv2DTranspose(base_depth, 3),
+            Conv2DTranspose(base_depth*2, 3),
+            Conv2D(self.channels, 3, activation=None),
         )
 
 
@@ -39,9 +42,17 @@ class VanillaVAE(Model):
         """
         x = tf.compat.v1.expand_dims(x, -1)
         x = tf.cast(x, 'float32')
-        x = self.e1(x)
-        x = self.flatten(x)
-        x = self.e2(x)
-        x = self.e3(x)
+        x = self.encoder(x)
         mu, log_std = x[:len(x)//2], x[len(x)//2:]
         return mu, log_std
+
+    def decoder(self, z):
+        return self.decoder(z)
+
+
+model = VanillaVAE(28, 128, 8)
+
+my_z = np.random.rand((1,8))
+print(my_z)
+x_hat = model.decoder(my_z)
+print(x_hat)

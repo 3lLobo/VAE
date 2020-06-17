@@ -2,6 +2,6 @@
 Experimental code for training VAEs on graph data.
 
 ## Requirements:
-    ensorflow
+    tensorflow
     tensorflow-probability
     numpy
