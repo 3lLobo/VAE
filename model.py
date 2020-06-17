@@ -64,6 +64,8 @@ def test_step(images, labels):
         test_accuracy(labels, pred)
 EPOCHS = 11
 
+# Lets make this an VAE
+
 for epoch in range(EPOCHS):
     # Reset the metrics at the start of the next epoch
     train_loss.reset_states()
