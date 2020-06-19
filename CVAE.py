@@ -4,7 +4,7 @@ from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, Conv2DTranspo
 import tensorflow_probability as tfp
 import numpy as np
 
-class VanillaVAE(Model):
+class VanillaCVAE(Model):
     def __init__(self, input_dim: int, hidden_dim: int, latent_dim: int, base_depth: int =32):
         """
         To initialize the model define its dimensionalities
@@ -54,16 +54,8 @@ class VanillaVAE(Model):
         return self.decoder(z)
     
     def reparameterize(self, mean, logstd):
+        self.mean = mean
+        self.logstd = logstd
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logstd) + mean
 
-
-model = VanillaVAE(28, 128, 8)
-
-my_z = np.random.rand(1,28,28)
-
-mean, logstd = model.encode(my_z)
-
-my_lat = model.reparameterize(mean, logstd)
-print('latent:', my_lat)
-x_hat = model.decode(my_lat)

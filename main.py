@@ -2,6 +2,9 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dense, Flatten, Conv2D
 import numpy as np
+import time
+from IPython import display
+from CVAE import VanillaCVAE
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 print("Num TPUs Available: ", len(tf.config.experimental.list_physical_devices('TPU')))
@@ -11,73 +14,85 @@ mnist = tf.keras.datasets.mnist
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
 # dataset makes toubles of batches with lables (images, labels)
-train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train)).shuffle(1000).batch(32)
+train_ds = tf.data.Dataset.from_tensor_slices(x_train).shuffle(1000).batch(32)
 
-test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(32)
-
-# vanilla CNN model: inputs an image and outputs a prediction.
-class VanillaCNN(Model):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = Conv2D(28, 3, activation='relu')
-        self.flatten = Flatten()
-        self.d1 = Dense(128, activation='relu')
-        self.d2 = Dense(10)
-
-    def call(self, x):
-        x = tf.compat.v1.expand_dims(x, -1)
-        x = tf.cast(x, 'float32')
-        x = self.conv1(x)
-        x = self.flatten(x)
-        x = self.d1(x)
-        return self.d2(x)
+test_ds = tf.data.Dataset.from_tensor_slices(x_test).batch(32)
 
 # Create an instance of the model
-model = VanillaCNN()   
+latent_dim = 8
+model = VanillaCVAE(28, 128, latent_dim)
 loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
-optimizer = tf.optimizers.Adam()
-
-# for images, labels in train_ds:
-#     pred = model.call(images)
-#     print(labels, 'vs', pred)
-
-train_loss = tf.keras.metrics.Mean(name='train_loss')
-train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
-test_loss = tf.keras.metrics.Mean(name='test_loss')
-test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
-
-@tf.function
-def train_step(images, labels):
-    with tf.GradientTape() as tape:
-        pred = model(images, training=True)
-        loss = loss_object(labels, pred)
-        grad = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients(zip(grad, model.trainable_variables))
-        train_loss(loss)
-        train_accuracy(labels, pred)
-
-@tf.function
-def test_step(images, labels):
-        pred = model(images, training=False)
-        loss = loss_object(labels, pred)
-        test_loss(loss)
-        test_accuracy(labels, pred)
+optimizer = tf.keras.optimizers.Adam(1e-4)
 EPOCHS = 11
 
-# Lets make this an VAE
 
-for epoch in range(EPOCHS):
-    # Reset the metrics at the start of the next epoch
-    train_loss.reset_states()
-    train_accuracy.reset_states()
-    for images, labels in train_ds:
-        train_step(images, labels)
-    for images, labels in test_ds:
-        test_step(images, labels)
-    # Plot to console
-    template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
-    print(template.format(epoch + 1,
-                    train_loss.result(),
-                    train_accuracy.result() * 100,
-                    test_loss.result(),
-                    test_accuracy.result() * 100))
+def log_normal_pdf(sample, mean, logstd, raxis=1):
+    log2pi = tf.math.log(2. * np.pi)
+    return tf.reduce_sum(
+        -.5 * ((sample - mean) ** 2. * tf.exp(-logstd*2) + logstd*2 + log2pi),
+        axis=raxis)
+
+
+def compute_loss(model, x):
+    x = tf.cast(x, 'float32')
+    mean, logstd = model.encode(x)
+    z = model.reparameterize(mean, logstd)
+    x_logit = model.decode(z)
+    x = tf.reshape(x_logit, (-1, 28, 28, 1))
+    cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
+    logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
+    logpz = log_normal_pdf(z, 0., 0.)
+    logqz_x = log_normal_pdf(z, mean, logstd)
+    return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+
+
+@tf.function
+def train_step(model, x, optimizer):
+    """Executes one training step and returns the loss.
+
+    This function computes the loss and gradients, and uses the latter to
+    update the model's parameters.
+    """
+    with tf.GradientTape() as tape:
+        loss = compute_loss(model, x)
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+
+def generate_and_save_images(model, epoch):
+    z = model.reparameterize(model.mean, model.logstd)
+    predictions = model.sample(z)
+    fig = plt.figure(figsize=(4, 4))
+
+    for i in range(predictions.shape[0]):
+        plt.subplot(4, 4, i + 1)
+        plt.imshow(predictions[i, :, :, 0], cmap='gray')
+        plt.axis('off')
+
+        # tight_layout minimizes the overlap between 2 sub-plots
+        plt.savefig('images/image_at_epoch_{:04d}.png'.format(epoch))
+        plt.show()
+
+
+def display_image(epoch_no):
+  return PIL.Image.open('image_at_epoch_{:04d}.png'.format(epoch_no))
+
+if __name__ == "__main__":
+
+    for epoch in range(1, EPOCHS + 1):
+        start_time = time.time()
+        for train_x in train_ds:
+            train_step(model, train_x, optimizer)
+        end_time = time.time()
+
+        loss = tf.keras.metrics.Mean()
+        for test_x in test_ds:
+            loss(compute_loss(model, test_x))
+        elbo = -loss.result()
+        display.clear_output(wait=False)
+        print('Epoch: {}, Test set ELBO: {}, time elapse for current epoch: {}'
+                .format(epoch, elbo, end_time - start_time))
+        generate_and_save_images(model, epoch)
+        # Display images
+        plt.imshow(display_image(epoch))
+        plt.axis('off')  
