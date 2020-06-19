@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, Conv2DTranspose
+from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, Conv2DTranspose, Reshape
 import tensorflow_probability as tfp
 import numpy as np
 
@@ -17,42 +17,53 @@ class VanillaVAE(Model):
         self.channels = 1
         # Define the encoder
         self.encoder = tf.keras.Sequential(
-            Input(shape=(input_dim, input_dim, self.channels)),
-            Conv2D(base_depth*2, 3, activation='relu'),
-            Conv2D(base_depth, 3, activation='relu'),
-            Flatten(),
-            Dense(hidden_dim, activation='relu'),
-            Dense(latent_dim*2),
+            [
+                Input(shape=[input_dim, input_dim, self.channels]),
+                Conv2D(base_depth*2, 3, activation='relu'),
+                Conv2D(base_depth, 3, activation='relu'),
+                Flatten(),
+                Dense(hidden_dim, activation='relu'),
+                Dense(2*latent_dim),
+            ]
         )
 
         # Define the decoder
         self.decoder = tf.keras.Sequential(
-            Input(shape=(latent_dim)),
-            Dense(hidden_dim),
-            Conv2DTranspose(base_depth, 3),
-            Conv2DTranspose(base_depth*2, 3),
-            Conv2D(self.channels, 3, activation=None),
+            [
+                Input(shape=(latent_dim)),
+                Dense(hidden_dim),
+                Dense(18432, activation='relu'),
+                Reshape(target_shape=(24, 24, 32)),
+                Conv2DTranspose(base_depth, 3, activation='relu'),
+                Conv2DTranspose(base_depth*2, 3, activation='relu'),
+                Conv2DTranspose(self.channels, 3, padding='same', activation=None),
+            ]
         )
 
 
 
-    def encoder(self, x):
+    def encode(self, x):
         """
         The encoder predicts a mean and logarithm of std of the prior distribution for the decoder.
         """
-        x = tf.compat.v1.expand_dims(x, -1)
-        x = tf.cast(x, 'float32')
-        x = self.encoder(x)
-        mu, log_std = x[:len(x)//2], x[len(x)//2:]
-        return mu, log_std
-
-    def decoder(self, z):
+        x = tf.reshape(x, (-1, 28,28, 1))
+        mean, logstd = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
+        return mean, logstd
+        
+    def decode(self, z):
         return self.decoder(z)
+    
+    def reparameterize(self, mean, logstd):
+        eps = tf.random.normal(shape=mean.shape)
+        return eps * tf.exp(logstd) + mean
 
 
 model = VanillaVAE(28, 128, 8)
 
-my_z = np.random.rand((1,8))
-print(my_z)
-x_hat = model.decoder(my_z)
-print(x_hat)
+my_z = np.random.rand(1,28,28)
+
+mean, logstd = model.encode(my_z)
+
+my_lat = model.reparameterize(mean, logstd)
+print('latent:', my_lat)
+x_hat = model.decode(my_lat)
