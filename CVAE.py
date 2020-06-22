@@ -15,15 +15,16 @@ class VanillaCVAE(Model):
         """
         super().__init__()
         self.channels = 1
+        initializer = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=1, seed=None)
         # Define the encoder
         self.encoder = tf.keras.Sequential(
             [
                 Input(shape=[input_dim, input_dim, self.channels]),
-                Conv2D(base_depth*2, 3, activation='relu'),
-                Conv2D(base_depth, 3, activation='relu'),
+                tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=(2, 2), activation='relu'),
+                tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=(2, 2), activation='relu'),
                 Flatten(),
-                Dense(hidden_dim, activation='relu'),
-                Dense(2*latent_dim),
+                # No activation
+                Dense(latent_dim + latent_dim),
             ]
         )
 
@@ -31,12 +32,12 @@ class VanillaCVAE(Model):
         self.decoder = tf.keras.Sequential(
             [
                 Input(shape=(latent_dim)),
-                Dense(hidden_dim),
-                Dense(18432, activation='relu'),
-                Reshape(target_shape=(24, 24, 32)),
-                Conv2DTranspose(base_depth, 3, activation='relu'),
-                Conv2DTranspose(base_depth*2, 3, activation='relu'),
-                Conv2DTranspose(self.channels, 3, padding='same', activation=None),
+                Dense(units=7*7*32, activation=tf.nn.relu),
+                Reshape(target_shape=(7, 7, 32)),
+                Conv2DTranspose(filters=64, kernel_size=3, strides=2, padding='same', activation='relu'),
+                Conv2DTranspose(filters=32, kernel_size=3, strides=2, padding='same', activation='relu'),
+                # No activation
+                Conv2DTranspose(filters=1, kernel_size=3, strides=1, padding='same'),
             ]
         )
 
@@ -47,12 +48,15 @@ class VanillaCVAE(Model):
         The encoder predicts a mean and logarithm of std of the prior distribution for the decoder.
         """
         x = tf.reshape(x, (-1, 28,28, 1))
+        print('x', x)
         mean, logstd = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
+        print('encode', self.encoder(x))
         return mean, logstd
         
     def decode(self, z):
-        return self.decoder(z)
-    
+        logits = self.decoder(z)
+        return logits
+        
     def reparameterize(self, mean, logstd):
         self.mean = mean
         self.logstd = logstd

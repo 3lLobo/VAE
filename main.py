@@ -13,10 +13,18 @@ mnist = tf.keras.datasets.mnist
 
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-# dataset makes toubles of batches with lables (images, labels)
-train_ds = tf.data.Dataset.from_tensor_slices(x_train).shuffle(1000).batch(32)
+# Preprocess images, creates binary matrix
+def preprocess_images(images):
+  images = images.reshape((images.shape[0], 28, 28, 1)) / 255.
+  return np.where(images > .5, 1.0, 0.0).astype('float32')
 
-test_ds = tf.data.Dataset.from_tensor_slices(x_test).batch(32)
+train_images = preprocess_images(x_train)
+test_images = preprocess_images(x_test)
+
+# dataset makes toubles of batches with lables (images, labels)
+train_ds = tf.data.Dataset.from_tensor_slices(train_images).shuffle(1000).batch(32)
+
+test_ds = tf.data.Dataset.from_tensor_slices(test_images).batch(32)
 
 # Create an instance of the model
 latent_dim = 8
@@ -26,25 +34,25 @@ optimizer = tf.keras.optimizers.Adam(1e-4)
 EPOCHS = 11
 
 
-def log_normal_pdf(sample, mean, logstd, raxis=1):
+def log_normal_pdf(sample, mean, logvar, raxis=1):
     log2pi = tf.math.log(2. * np.pi)
     return tf.reduce_sum(
-        -.5 * ((sample - mean) ** 2. * tf.exp(-logstd*2) + logstd*2 + log2pi),
-        axis=raxis)
+          -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
+          axis=raxis)
 
 
 def compute_loss(model, x):
     x = tf.cast(x, 'float32')
     mean, logstd = model.encode(x)
+    print('important', mean, logstd)
     z = model.reparameterize(mean, logstd)
     x_logit = model.decode(z)
-    x = tf.reshape(x_logit, (-1, 28, 28, 1))
+    x = tf.reshape(x, (-1, 28, 28, 1))
     cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
     logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
     logpz = log_normal_pdf(z, 0., 0.)
-    logqz_x = log_normal_pdf(z, mean, logstd)
+    logqz_x = log_normal_pdf(z, mean, 2*logstd)
     return -tf.reduce_mean(logpx_z + logpz - logqz_x)
-
 
 @tf.function
 def train_step(model, x, optimizer):
@@ -96,3 +104,5 @@ if __name__ == "__main__":
         # Display images
         plt.imshow(display_image(epoch))
         plt.axis('off')  
+
+
