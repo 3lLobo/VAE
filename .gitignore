@@ -1,6 +1,12 @@
 # This is personal  O.o
 .vscode
 data/
+*.png
+*.PNG
+*.jpg
+*.JPG
+*.csv
+*.tsv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
