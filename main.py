@@ -44,7 +44,6 @@ def log_normal_pdf(sample, mean, logvar, raxis=1):
 def compute_loss(model, x):
     x = tf.cast(x, 'float32')
     mean, logstd = model.encode(x)
-    print('important', mean, logstd)
     z = model.reparameterize(mean, logstd)
     x_logit = model.decode(z)
     x = tf.reshape(x, (-1, 28, 28, 1))
@@ -69,7 +68,7 @@ def train_step(model, x, optimizer):
 
 def generate_and_save_images(model, epoch):
     z = model.reparameterize(model.mean, model.logstd)
-    predictions = model.sample(z)
+    predictions = model.decode(z)
     fig = plt.figure(figsize=(4, 4))
 
     for i in range(predictions.shape[0]):
@@ -78,7 +77,7 @@ def generate_and_save_images(model, epoch):
         plt.axis('off')
 
         # tight_layout minimizes the overlap between 2 sub-plots
-        plt.savefig('images/image_at_epoch_{:04d}.png'.format(epoch))
+        plt.savefig('image_at_epoch_{:04d}.png'.format(epoch))
         plt.show()
 
 

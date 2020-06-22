@@ -48,9 +48,7 @@ class VanillaCVAE(Model):
         The encoder predicts a mean and logarithm of std of the prior distribution for the decoder.
         """
         x = tf.reshape(x, (-1, 28,28, 1))
-        print('x', x)
         mean, logstd = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
-        print('encode', self.encoder(x))
         return mean, logstd
         
     def decode(self, z):
