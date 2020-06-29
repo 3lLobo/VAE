@@ -12,3 +12,12 @@ plt.show()
 plt.savefig('graphie.png')
 
 print(nx.adjacency_matrix(lollipop))
+graph = lollipop
+graph.add_node(6)
+graph.add_edge(6,1)
+graph.add_attribute(6, 'a')
+print(nx.nodes(graph))
+print(nx.adjacency_matrix(graph))
+print(nx.adjacency_data(graph))
+print(nx.attr_matrix(graph))
+print(nx.attribute_mixing_matrix(graph, '3'))
