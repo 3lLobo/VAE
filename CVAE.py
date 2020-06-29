@@ -9,9 +9,9 @@ class VanillaCVAE(Model):
         """
         To initialize the model define its dimensionalities
         Args:
-            @hidden_dim: number of hidden dimensions
-            @latent_dim: number of latent space dimensions
-            @base_depth: number of filters for convolution layers
+            hidden_dim: number of hidden dimensions
+            latent_dim: number of latent space dimensions
+            base_depth: number of filters for convolution layers
         """
         super().__init__()
         self.channels = 1
@@ -46,6 +46,8 @@ class VanillaCVAE(Model):
     def encode(self, x):
         """
         The encoder predicts a mean and logarithm of std of the prior distribution for the decoder.
+        Agrs:
+            x: Input batch.
         """
         x = tf.reshape(x, (-1, 28,28, 1))
         mean, logstd = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
@@ -56,15 +58,26 @@ class VanillaCVAE(Model):
         return logits
         
     def reparameterize(self, mean, logstd):
+        """
+        Apply the reparametrization trick and sample from a normal distribution taking the mean and std from the encoder output.
+        Args:
+            mean: The mean for the normal distribution.
+            logstd: The logarithm std.
+        """
         self.mean = mean
         self.logstd = logstd
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logstd) + mean
 
-    def plot_manifold(self, epoch,latent_dim=10, n=4, digit_size=28):
+    def plot_manifold(self, epoch, latent_dim=10, n=4, digit_size=28):
         """
         Plots a 2D maifold of the last two dimensions of the latent space.
         The remeining latent dimensions are sampled randomly l_dim-2 times.
+        Args:
+            epoch: The current epoch.
+            latent_dim: Dimension of the latent space.
+            n: splits per dimension.
+            digit_size: size of the quadratic image to plot.
         """
         l_remain = int(latent_dim -2)
         l_r_half = int(l_remain/2)
