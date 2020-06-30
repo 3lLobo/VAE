@@ -25,7 +25,7 @@ class VanillaGVAE(Model):
             [
                 Input(shape=[n*n + n*na + n*n*ea]),
                 Dense(units=h_dim, activation='relu'),
-                Dense(units=z_dim, ),
+                Dense(units=z_dim*2, ),
             ]
         )
         self.decoder = tf.keras.Sequential(
@@ -44,11 +44,10 @@ class VanillaGVAE(Model):
             E: Edge attribute matrix of size n*n*ea
             F: Node attribute matrix of size n*na
         """
-        a = Flatten()(A)
-        e = Flatten()(E)
-        f = Flatten()(F)
+        a = tf.reshape(A, (-1, self.n*self.n))
+        e = tf.reshape(E, (-1, self.n*self.n*self.ea))
+        f = tf.reshape(F, (-1, self.n*self.na))
         x = tf.concat([a, e, f], axis=1)
-        print(x.shape())
         mean, logstd = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
         return mean, logstd
         
@@ -58,6 +57,7 @@ class VanillaGVAE(Model):
         delimit_e = self.n*self.n + self.n*self.n*self.ea
 
         a, e, f = logits[:,:delimit_a], logits[:,delimit_a:delimit_e], logits[:, delimit_e:]
+        print('Results:', Reshape(target_shape=[self.n, self.n])(a))
         A = Reshape(target_shape=[self.n, self.n])(a)
         E = Reshape(target_shape=[self.n, self.n, self.ea])(e)
         F = Reshape(target_shape=[self.n, self.na])(f)
@@ -75,13 +75,13 @@ if __name__ == "__main__":
     ea = 5
     na = 3
 
-    A = np.random.randint((n, n))
-    E = np.random.randint((n, n, ea))
-    F = np.random.randint((n, na))
+    A = np.random.randint(2, size=(n, n))
+    print(A)
+    E = np.random.randint(2, size=(n, n, ea))
+    F = np.random.randint(2, size=(n, na))
     model = VanillaGVAE(n, na, ea)
 
     mean, logstd = model.encode(A, E, F)
     z = model.reparameterize(mean, logstd)
     print('z', z)
     c = model.decode(z)
-    print('Results:', Reshape(target_shape=[self.n, self.n])(a))
