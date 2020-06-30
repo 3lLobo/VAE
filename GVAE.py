@@ -70,6 +70,31 @@ class VanillaGVAE(Model):
         return eps * tf.exp(logstd) + mean
 
 
+def graph_loss(A_hat, E_hat, F_hat, A, E, F):
+    """
+    Loss function for the predicted graph. It takes each matrix seperatly into account.
+    Goal is to solve the permutation inveriance.
+    Args:
+        A_hat: Predicted adjancency matrix.
+        E_hat: Predicted edge-attribute matrix.
+        F_hat: Predicted node-attribute matrix.
+        A: Ground truth adjancency matrix.
+        E: Ground truth edge-attribute matrix.
+        F: Ground truth node-attribute matrix.
+    """
+    # Set weights for diffenrent parts of the loss function
+    w1 = 1
+    w2 = 5
+    w3 = 3
+    w4 = 1
+
+    # Match number of nodes
+    loss_n_nodes = tf.math.sqrt(tf.math.count_nonzero(A)**2 - tf.math.count_nonzero(A_hat)**2)
+    bce = tf.keras.losses.BinaryCrossentropy()
+    loss = w1*loss_n_nodes + w2*bce(A, A_hat) + w3*bce(E, E_hat) + w4*bce(F, F_hat)
+    return loss
+
+
 if __name__ == "__main__":
     n = 20
     ea = 5
@@ -84,4 +109,8 @@ if __name__ == "__main__":
     mean, logstd = model.encode(A, E, F)
     z = model.reparameterize(mean, logstd)
     print('z', z)
-    c = model.decode(z)
+    A_hat, E_hat, F_hat = model.decode(z)
+    loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
+    loss,backwrdsd
+    
+
