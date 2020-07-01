@@ -57,7 +57,6 @@ class VanillaGVAE(Model):
         delimit_e = self.n*self.n + self.n*self.n*self.ea
 
         a, e, f = logits[:,:delimit_a], logits[:,delimit_a:delimit_e], logits[:, delimit_e:]
-        print('Results:', Reshape(target_shape=[self.n, self.n])(a))
         A = Reshape(target_shape=[self.n, self.n])(a)
         E = Reshape(target_shape=[self.n, self.n, self.ea])(e)
         F = Reshape(target_shape=[self.n, self.na])(f)
@@ -70,7 +69,7 @@ class VanillaGVAE(Model):
         return eps * tf.exp(logstd) + mean
 
 
-def graph_loss(A_hat, E_hat, F_hat, A, E, F):
+def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     """
     Loss function for the predicted graph. It takes each matrix seperatly into account.
     Goal is to solve the permutation inveriance.
@@ -89,7 +88,9 @@ def graph_loss(A_hat, E_hat, F_hat, A, E, F):
     w4 = 1
 
     # Match number of nodes
-    loss_n_nodes = tf.math.sqrt(tf.math.count_nonzero(A)**2 - tf.math.count_nonzero(A_hat)**2)
+    # A_hat[A<.5] = 0.
+    print(F_hat)
+    loss_n_nodes = tf.math.sqrt(tf.cast(tf.math.count_nonzero(A) - tf.math.count_nonzero(A_hat), float)**2)
     bce = tf.keras.losses.BinaryCrossentropy()
     loss = w1*loss_n_nodes + w2*bce(A, A_hat) + w3*bce(E, E_hat) + w4*bce(F, F_hat)
     return loss
@@ -101,16 +102,14 @@ if __name__ == "__main__":
     na = 3
 
     A = np.random.randint(2, size=(n, n))
-    print(A)
     E = np.random.randint(2, size=(n, n, ea))
     F = np.random.randint(2, size=(n, na))
     model = VanillaGVAE(n, na, ea)
 
     mean, logstd = model.encode(A, E, F)
     z = model.reparameterize(mean, logstd)
-    print('z', z)
     A_hat, E_hat, F_hat = model.decode(z)
     loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
-    loss,backwrdsd
-    
+    print(loss)
+    # loss.backward
 
