@@ -25,12 +25,14 @@ class VanillaGVAE(Model):
             [
                 Input(shape=[n*n + n*na + n*n*ea]),
                 Dense(units=h_dim, activation='relu'),
+                Dense(units=h_dim*2, activation='relu'),
                 Dense(units=z_dim*2, ),
             ]
         )
         self.decoder = tf.keras.Sequential(
             [
                 Input(shape=[z_dim]),
+                Dense(units=h_dim*2, activation='relu'),
                 Dense(units=h_dim, activation='relu'),
                 Dense(units=(n*n + n*na + n*n*ea), activation='relu'),
             ]
@@ -82,34 +84,44 @@ def graph_loss(A, E, F, A_hat, E_hat, F_hat):
         F: Ground truth node-attribute matrix.
     """
     # Set weights for diffenrent parts of the loss function
-    w1 = 1
-    w2 = 5
-    w3 = 3
+    w1 = 0
+    w2 = 2
+    w3 = 2
     w4 = 1
 
     # Match number of nodes
-    # A_hat[A<.5] = 0.
-    print(F_hat)
     loss_n_nodes = tf.math.sqrt(tf.cast(tf.math.count_nonzero(A) - tf.math.count_nonzero(A_hat), float)**2)
-    bce = tf.keras.losses.BinaryCrossentropy()
+    bce = tf.keras.losses.BinaryCrossentropy(from_logits=False)
     loss = w1*loss_n_nodes + w2*bce(A, A_hat) + w3*bce(E, E_hat) + w4*bce(F, F_hat)
     return loss
 
 
 if __name__ == "__main__":
-    n = 20
+    n = 5
     ea = 5
     na = 3
+    np.random.seed(seed=11)
+    epochs = 111
+    batch_size = 6
+    
+    model = VanillaGVAE(n, na, ea, h_dim=1024)
+    optimizer = tf.optimizers.Adam(learning_rate=5e-4)
+    A = np.random.randint(2, size=(batch_size, n, n))
+    E = np.random.randint(2, size=(batch_size, n, n, ea))
+    F = np.random.randint(2, size=(batch_size, n, na))    
+    for epoch in range(epochs):
+        # loss.backward
+        with tf.GradientTape() as tape:
+            mean, logstd = model.encode(A, E, F)
+            z = model.reparameterize(mean, logstd)
+            A_hat, E_hat, F_hat = model.decode(z)
+            loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
+            print(loss.numpy())
 
-    A = np.random.randint(2, size=(n, n))
-    E = np.random.randint(2, size=(n, n, ea))
-    F = np.random.randint(2, size=(n, na))
-    model = VanillaGVAE(n, na, ea)
-
-    mean, logstd = model.encode(A, E, F)
-    z = model.reparameterize(mean, logstd)
-    A_hat, E_hat, F_hat = model.decode(z)
-    loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
-    print(loss)
-    # loss.backward
-
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    print(A)
+    A_hat = np.array(A_hat)
+    A_hat[A_hat>.5] = 1.
+    A_hat[A_hat<=.5] = 0.
+    print('Pred:', A_hat)
