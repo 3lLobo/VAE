@@ -69,7 +69,12 @@ class MPGM():
                     # We will set these points to zero unitl we find an better solution. 
                     S[i,j,a,b] = 0.
         return S
-
+    
+    def max_pool(self, S):
+        # The magic happens here, we are going to iterativly max pool the S matrix to get the X matrix.
+        # We initiate the X matrix random uniform.
+        # TODO
+        pass
 
 
 if __name__ == "__main__":
@@ -82,7 +87,7 @@ if __name__ == "__main__":
 
     # Let's define some dimensions :)
     n = 6
-    k = 6
+    k = 2
     d_e = 2
     d_n = 3
 
@@ -91,6 +96,7 @@ if __name__ == "__main__":
     E = np.random.randint(2, size=(n,n,d_e))
     F = np.random.randint(2, size=(n,d_n))
     A_hat = np.random.randint(2, size=(k,k))
+    # A_hat = A
     E_hat = np.random.randint(2, size=(k,k,d_e))
     F_hat = np.random.randint(2, size=(k,d_n))
 
