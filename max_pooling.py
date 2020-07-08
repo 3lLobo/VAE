@@ -78,6 +78,8 @@ if __name__ == "__main__":
     lollipop = nx.lollipop_graph(3, 3)
     lollipop.add_edge(3,2)
 
+
+
     # Let's define some dimensions :)
     n = 6
     k = 6
