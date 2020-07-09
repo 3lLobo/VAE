@@ -96,7 +96,7 @@ if __name__ == "__main__":
     E = np.random.randint(2, size=(n,n,d_e))
     F = np.random.randint(2, size=(n,d_n))
     A_hat = np.random.randint(2, size=(k,k))
-    # A_hat = A
+    # A_hat = A TODO make it a distribution!!!
     E_hat = np.random.randint(2, size=(k,k,d_e))
     F_hat = np.random.randint(2, size=(k,d_n))
 
