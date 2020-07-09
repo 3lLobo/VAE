@@ -43,19 +43,20 @@ class MPGM():
         
         return S
 
-    def similarity_loop(self, A, A_hat, E, E_hat, F, F_hat):
+    def affinity_loop(self, A, A_hat, E, E_hat, F, F_hat):
         # We are going to itterate over pairs of (a,b) and (i,j)
         # np.nindex is oging to make touples to avoid two extra loops.
         ij_pairs = list(np.ndindex(A.shape))
         ab_pairs = list(np.ndindex(A_hat.shape))
         n = A.shape[0]
+        self.n = n
         k = A_hat.shape[0]
-
-        # create en empty Similarity martrix.
-        S = np.empty((n,n,k,k))
+        self.k = k
+        # create en empty affinity martrix.
+        S = np.empty((k,k,n,n))
 
         # Now we start filling in the S matrix.
-        for (i, j )in ij_pairs:
+        for (i, j) in ij_pairs:
             for (a, b) in ab_pairs:
                 # OMG this loop feels sooo wrong!
                 if a != b and i != j:
@@ -63,6 +64,7 @@ class MPGM():
                     S[i,j,a,b] = np.matmul(np.transpose(E[i,j,:]), E_hat[a,b,:]) * A_scalar
                     del A_scalar
                 elif a == b and i == j:
+                    # Is it neccessary to transpose? I am in doubt if numpy auto matches dimensions. Update: No, does not, stop being paranoid!!!
                     S[i,j,a,b] = np.matmul(np.transpose(F[i,:]), F_hat[a,:]) * A_hat[a,a]
                 else:
                     # For some reason the similarity beteen two nodes for the case when one node is on the diagonal is not defined.
@@ -70,11 +72,43 @@ class MPGM():
                     S[i,j,a,b] = 0.
         return S
     
-    def max_pool(self, S):
+    def max_pool(self, S, n_itterations: int=6):
+        """
+        Input: Affinity matrix
+        Output: Soft assignment matrix
+        Args:
+            S (np.array): Float affinity matrix of size (k,k,n,n)
+            n_iterations (int): Number of itterations for calculating X
+        """
         # The magic happens here, we are going to iterativly max pool the S matrix to get the X matrix.
         # We initiate the X matrix random uniform.
         # TODO
-        pass
+        # init X
+        k = self.k
+        n = self.n
+        X = np.zeros((k,n))
+        print(X)
+        # make pairs
+        ia_pairs = list(np.ndindex(X.shape))
+
+        #Just to make sure we are not twisting things. note: shape = dim+1
+        assert ia_pairs[-1] == (k-1,n-1), 'Dimensions should be ({},{}) but are {}'.format(k-1,n-1,ia_pairs[-1])
+
+        #loop over itterations and paris
+        for itt in range(n_itterations):
+            for (a, i) in ia_pairs:
+                # TODO the paper says argmax and sum over the 'neighbors' of node pair (i,a).
+                # My interpretation is that when there is no neighbor the S matrix will be zero, therfore we still use j anb b in full rage.
+                # Second option would be to use a range of [i-1,i+2].
+                print(k)
+                de_sum = np.sum([np.argmax(X[j,:]@S[i,a,j,:]) for j in range(k)])
+                x[i,a] = x[i,a] * A[i,a,i,a] + de_sum
+            # Normalize X to range [0,1].
+            X = X * np.linalg.norm(X)
+            print(X)
+        return X
+
+
 
 
 if __name__ == "__main__":
@@ -103,7 +137,6 @@ if __name__ == "__main__":
     # Test the class, acctually this should go in a test function and folder. Later...
     mpgm = MPGM()
 
-    S = mpgm.similarity_loop(A, A_hat, E, E_hat, F, F_hat)
-    print(S)
+    S = mpgm.affinity_loop(A, A_hat, E, E_hat, F, F_hat)
     print(S.shape)
-    
+    X = mpgm.max_pool(S)
