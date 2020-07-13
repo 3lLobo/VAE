@@ -53,7 +53,7 @@ class MPGM():
         k = A_hat.shape[0]
         self.k = k
         # create en empty affinity martrix.
-        S = np.empty((k,k,n,n))
+        S = np.empty((n,n,k,k))
 
         # Now we start filling in the S matrix.
         for (i, j) in ij_pairs:
@@ -64,48 +64,49 @@ class MPGM():
                     S[i,j,a,b] = np.matmul(np.transpose(E[i,j,:]), E_hat[a,b,:]) * A_scalar
                     del A_scalar
                 elif a == b and i == j:
-                    # Is it neccessary to transpose? I am in doubt if numpy auto matches dimensions. Update: No, does not, stop being paranoid!!!
+                    # Is it necessary to transpose? I am in doubt if numpy auto matches dimensions. Update: No, does not, stop being paranoid!!!
                     S[i,j,a,b] = np.matmul(np.transpose(F[i,:]), F_hat[a,:]) * A_hat[a,a]
                 else:
-                    # For some reason the similarity beteen two nodes for the case when one node is on the diagonal is not defined.
-                    # We will set these points to zero unitl we find an better solution. 
+                    # For some reason the similarity between two nodes for the case when one node is on the diagonal is not defined.
+                    # We will set these points to zero until we find an better solution. 
                     S[i,j,a,b] = 0.
         return S
     
-    def max_pool(self, S, n_itterations: int=6):
+    def max_pool(self, S, n_iterations: int=6):
         """
         Input: Affinity matrix
         Output: Soft assignment matrix
         Args:
             S (np.array): Float affinity matrix of size (k,k,n,n)
-            n_iterations (int): Number of itterations for calculating X
+            n_iterations (int): Number of iterations for calculating X
         """
-        # The magic happens here, we are going to iterativly max pool the S matrix to get the X matrix.
+        # The magic happens here, we are going to iteratively max pool the S matrix to get the X matrix.
         # We initiate the X matrix random uniform.
-        # TODO
         # init X
         k = self.k
         n = self.n
-        X = np.zeros((k,n))
-        print(X)
+        X = np.random.uniform(size=(n,k))
         # make pairs
         ia_pairs = list(np.ndindex(X.shape))
 
         #Just to make sure we are not twisting things. note: shape = dim+1
-        assert ia_pairs[-1] == (k-1,n-1), 'Dimensions should be ({},{}) but are {}'.format(k-1,n-1,ia_pairs[-1])
+        assert ia_pairs[-1] == (n-1,k-1), 'Dimensions should be ({},{}) but are {}'.format(n-1,k-1,ia_pairs[-1])
 
-        #loop over itterations and paris
-        for itt in range(n_itterations):
-            for (a, i) in ia_pairs:
+        #loop over iterations and paris
+        for itt in range(n_iterations):
+            for (i, a) in ia_pairs:
                 # TODO the paper says argmax and sum over the 'neighbors' of node pair (i,a).
-                # My interpretation is that when there is no neighbor the S matrix will be zero, therfore we still use j anb b in full rage.
+                # My interpretation is that when there is no neighbor the S matrix will be zero, there fore we still use j anb b in full rage.
                 # Second option would be to use a range of [i-1,i+2].
-                print(k)
-                de_sum = np.sum([np.argmax(X[j,:]@S[i,a,j,:]) for j in range(k)])
-                x[i,a] = x[i,a] * A[i,a,i,a] + de_sum
+                # The first term max pools over the pairs of edge matches (ia;jb).
+                de_sum = np.sum([np.argmax(X[j,:] @ S[i,j,a,:]) for j in range(k)])
+                # In the next term we only consider the node matches (ia;ia).
+                X[i,a] = X[i,a] * S[i,i,a,a] + de_sum
             # Normalize X to range [0,1].
-            X = X * np.linalg.norm(X)
+            print(np.linalg.norm(X))
+            X = X * 1./np.linalg.norm(X)
             print(X)
+
         return X
 
 
@@ -113,7 +114,7 @@ class MPGM():
 
 if __name__ == "__main__":
 
-    # unnesseccary generation of a lollipop graph
+    # unnecessary generation of a lollipop graph
     lollipop = nx.lollipop_graph(3, 3)
     lollipop.add_edge(3,2)
 
