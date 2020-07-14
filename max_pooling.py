@@ -3,6 +3,7 @@ Implementation of the max-pooling graph matching algorithm.
 """
 import networkx as nx
 import numpy as np
+from munkres import Munkres, print_matrix, make_cost_matrix
 
 
 class MPGM():
@@ -11,6 +12,8 @@ class MPGM():
 
     def call(self, A, A_hat, E, E_hat, F, F_hat):
         S = self.similarity(A, A_hat, E, E_hat, F, F_hat)
+        X_star = self.max_pool(S)
+        # TODO discretizice X
         pass
     
     def zero_mask_diag(self, A, inverse=False):
@@ -103,11 +106,36 @@ class MPGM():
                 # In the next term we only consider the node matches (ia;ia).
                 X[i,a] = X[i,a] * S[i,i,a,a] + de_sum
             # Normalize X to range [0,1].
-            print(np.linalg.norm(X))
             X = X * 1./np.linalg.norm(X)
-            print(X)
-
         return X
+
+    def hungarian(self, X_star, cost: bool=True):
+        
+        """ 
+        Apply the hungarian or munkes algorithm to the continuous assignment matrix.
+        The output is a discrete similarity matrix.
+        Are we working with a cost or a profit matrix???
+        Args:
+            X_star: numpy array matrix of size n x k with elements in range [0,1]
+            cost: Boolean argument if to assume the input is a profit matrix and to convert is to a cost matrix or not.
+        """
+        m = Munkres()
+        if cost:
+            X_star = make_cost_matrix(X_star)
+        # Compute the indexes for the matrix for the lowest cost path.        
+        indexes = m.compute(X_star)
+        print(indexes[0])
+
+        # Now mast these indexes with 1 and the rest with 0.
+        X = np.zeros_like(X_star, dtype=int)
+        for idx in indexes:
+            X[idx] = 1
+        return X
+
+        
+
+
+
 
 
 
@@ -121,23 +149,23 @@ if __name__ == "__main__":
 
 
     # Let's define some dimensions :)
-    n = 6
-    k = 2
+    n = 4
+    k = 4
     d_e = 2
     d_n = 3
 
-    # Generation of random test graphs
+    # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
     A = np.ones((n,n))
     E = np.random.randint(2, size=(n,n,d_e))
     F = np.random.randint(2, size=(n,d_n))
-    A_hat = np.random.randint(2, size=(k,k))
-    # A_hat = A TODO make it a distribution!!!
-    E_hat = np.random.randint(2, size=(k,k,d_e))
-    F_hat = np.random.randint(2, size=(k,d_n))
+    A_hat = np.random.normal(size=(k,k))
+    E_hat = np.random.normal(size=(k,k,d_e))
+    F_hat = np.random.normal(size=(k,d_n))
 
-    # Test the class, acctually this should go in a test function and folder. Later...
+    # Test the class, actually this should go in a test function and folder. Later...
     mpgm = MPGM()
 
     S = mpgm.affinity_loop(A, A_hat, E, E_hat, F, F_hat)
     print(S.shape)
     X = mpgm.max_pool(S)
+    print(mpgm.hungarian(X))
