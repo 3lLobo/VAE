@@ -3,6 +3,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Input, Dense, Flatten, Reshape
 import tensorflow_probability as tfp
 import numpy as np
+from max_pooling import MPGM
 
 
 class VanillaGVAE(Model):
@@ -73,13 +74,13 @@ class VanillaGVAE(Model):
 
 def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     """
-    Loss function for the predicted graph. It takes each matrix seperatly into account.
-    Goal is to solve the permutation inveriance.
+    Loss function for the predicted graph. It takes each matrix separately into account.
+    Goal is to solve the permutation invariance.
     Args:
-        A_hat: Predicted adjancency matrix.
+        A_hat: Predicted adjencency matrix.
         E_hat: Predicted edge-attribute matrix.
         F_hat: Predicted node-attribute matrix.
-        A: Ground truth adjancency matrix.
+        A: Ground truth adjencency matrix.
         E: Ground truth edge-attribute matrix.
         F: Ground truth node-attribute matrix.
     """
@@ -94,6 +95,29 @@ def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     bce = tf.keras.losses.BinaryCrossentropy(from_logits=False)
     loss = w1*loss_n_nodes + w2*bce(A, A_hat) + w3*bce(E, E_hat) + w4*bce(F, F_hat)
     return loss
+
+
+def mpgm_loss(A, E, F, A_hat, E_hat, F_hat):
+    """
+    Loss function using max-pooling graph matching as describes in the GraphVAE paper.
+    Lets see if backprop works. Args obvly the same as above!
+    """
+    n = A.shape[0]
+    k = A_hat.shape[0]
+    mpgm = MPGM()
+    X = mpgm.call(A, A_hat, E, E_hat, F, F_hat)
+
+    # now comes the loss part from the paper:
+    A_t = X@A@X.T
+    # or:
+    A_t = tf.matmul(tf.matmul(X, A), X.T)
+    E_hat_t = tf.matmul(tf.matmul(X, E_hat), X.T)
+    F_hat_t = tf.matmul(X, F_hat)
+    log_p_A = 1/k 
+    pass
+
+
+
 
 
 if __name__ == "__main__":
@@ -116,6 +140,7 @@ if __name__ == "__main__":
             z = model.reparameterize(mean, logstd)
             A_hat, E_hat, F_hat = model.decode(z)
             loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
+            mpgm_loss(A, E, F, A_hat, E_hat, F_hat)
             print(loss.numpy())
 
         gradients = tape.gradient(loss, model.trainable_variables)

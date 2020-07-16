@@ -3,6 +3,7 @@ Implementation of the max-pooling graph matching algorithm.
 """
 import networkx as nx
 import numpy as np
+from numpy import array
 from munkres import Munkres, print_matrix, make_cost_matrix
 
 
@@ -107,6 +108,8 @@ class MPGM():
                 # In the next term we only consider the node matches (ia;ia).
                 X[i,a] = X[i,a] * S[i,i,a,a] + de_sum
             # Normalize X to range [0,1].
+            print(np.linalg.norm(X))
+            print(X)
             X = X * 1./np.linalg.norm(X)
         return X
 
@@ -143,12 +146,6 @@ class MPGM():
 
 if __name__ == "__main__":
 
-    # unnecessary generation of a lollipop graph
-    lollipop = nx.lollipop_graph(3, 3)
-    lollipop.add_edge(3,2)
-
-
-
     # Let's define some dimensions :)
     n = 4
     k = 4
@@ -162,6 +159,9 @@ if __name__ == "__main__":
     A_hat = np.random.normal(size=(k,k))
     E_hat = np.random.normal(size=(k,k,d_e))
     F_hat = np.random.normal(size=(k,d_n))
+    # Make the diagonals zero
+    # np.fill_diagonal(A, 0)
+    # np.fill_diagonal(A_hat, 0.)
 
     # Test the class, actually this should go in a test function and folder. Later...
     mpgm = MPGM()
