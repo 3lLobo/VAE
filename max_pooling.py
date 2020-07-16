@@ -13,8 +13,9 @@ class MPGM():
     def call(self, A, A_hat, E, E_hat, F, F_hat):
         S = self.similarity(A, A_hat, E, E_hat, F, F_hat)
         X_star = self.max_pool(S)
-        # TODO discretizice X
-        pass
+        X = self.hungarian(X_star)
+        return X
+
     
     def zero_mask_diag(self, A, inverse=False):
         # creates mask to zero out the diagonal matrix
