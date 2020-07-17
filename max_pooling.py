@@ -4,6 +4,7 @@ Implementation of the max-pooling graph matching algorithm.
 import networkx as nx
 import numpy as np
 from numpy import array
+import tensorflow as tf
 from munkres import Munkres, print_matrix, make_cost_matrix
 
 
@@ -12,44 +13,91 @@ class MPGM():
         pass
 
     def call(self, A, A_hat, E, E_hat, F, F_hat):
-        S = self.similarity(A, A_hat, E, E_hat, F, F_hat)
+        S = self.affinity(A, A_hat, E, E_hat, F, F_hat)
         X_star = self.max_pool(S)
         X = self.hungarian(X_star)
         return X
 
     
-    def zero_mask_diag(self, A, inverse=False):
-        # creates mask to zero out the diagonal matrix
-        # If inverse is ser to true it returns a matrix with only the diagonal values
+    # def zero_mask_diag(self, A, inverse=False):
+    #     # creates mask to zero out the diagonal matrix
+    #     # If inverse is ser to true it returns a matrix with only the diagonal values
+    #     if inverse:
+    #         zeros = np.zeros_like(A)
+    #         np.fill_diagonal(zeros, np.diag(A))
+    #         return zeros
+    #     else:       
+    #         np.fill_diagonal(A, 0) 
+    #         return A
+    
+    def zero_diag(self, A, inverse=False):
+        """
+        Decided to use tensors since numpy makes batch-life hard.
+        Input can be a np.array?
+        """
         if inverse:
-            zeros = np.zeros_like(A)
-            np.fill_diagonal(zeros, np.diag(A))
-            return zeros
+            return tf.linalg.diag(A)
         else:       
-            np.fill_diagonal(A, 0) 
-            return A
+            return tf.linalg.set_diag(A, np.zeros((A.shape[0],A.shape[1])))
         
-    def similarity(self, A, A_hat, E, E_hat, F, F_hat):
-        # Matrix multiplication possible?
-        E_t = np.transpose(E, (0,2,1))
-        F_t = np.transpose(F, (1,0))
-        # TODO: Mask A and A_hat
-        A_diag_zero = self.zero_mask_diag(A)
-        A_hat_diag_zero = self.zero_mask_diag(A_hat)
-        A_hat_diag = self.zero_mask_diag(A, inverse=True)
-        S1 = np.matmul(E_t, E_hat)
-        print(S1.shape)
-        S2 = A_diag_zero @ A_hat_diag_zero @ A_hat_diag @ A_hat_diag
 
-        S21 = np. transpose(np.matmul(F_t, F_hat))
+    def affinity(self, A, A_hat, E, E_hat, F, F_hat):
+        """
+        Let's make some dimensionalities clear first:
+            A: nxn
+            E: nxnxd_e
+            F: nxd_n
+            A_hat: kxk
+            E_hat: kxkxd_e
+            F_hat: kxd_n
+        In an ideal world the target dimension n and the predictions dim k are the same.
+        The other two dimensions are node and edge attributes. All matrixes come in batches, which is the first dimension.
+        Now we are going to try to solve this with matrix multiplication, for-loops are a no-go.
+        My first shot would be to implement this formula without respecting the constrains:
+        S((i, j),(a, b)) = (E'(i,j,:)E_hat(a,b,:))A(i,j)A_hat(a,b)A_hat(a,a)A_hat(b,b) [i != j ∧ a != b] + (F'(i,:)F_hat(a,:))A_hat(a,a) [i == j ∧ a == b]
+        And later mask the constrained entries with zeros.
+        TODO To test it we could run a single sample and compare the loop and the matmul output.
+        """
+        n = A.shape[1]
+        self.n = n
+        k = A_hat.shape[1]
+        self.k = k
 
-        S3 = np.matmul(S21, A_hat_diag)
-        S = np.matmul(S1, S2) + S3
+        F_hat_t = tf.transpose(F_hat, perm=(0,2,1))
+        # We don't need to mask sht. We only need the diagonal. Duh..
+        A_hat_diag = tf.expand_dims(tf.linalg.diag_part(A_hat),-1)
+        A_hat_diag_t = tf.transpose(A_hat_diag, perm=[0, 2, 1])
+
+        # Cast the matices to tensors, bc the function tensordot only takes tensors..
+        F = tf.cast(F, dtype=tf.float64)
+        A = tf.cast(A, dtype=tf.float64)
+        E = tf.cast(E, dtype=tf.float64)
+        E_hat = tf.cast(E_hat, dtype=tf.float64) 
+        S11 = tf.keras.backend.batch_dot(E, E_hat, axes=(3, 3))   # Crazy that this function even exists. We aim for shape (batch_s,n,n,k,k).
+
+        # Now we need to get the second part into shape (batch_s,n,n,k,k).
+        S121 = A_hat * (A_hat_diag @ A_hat_diag_t)
+        # This step masks out the (a,b) diagonal. TODO: Make it optional.
+        S122 = tf.linalg.set_diag(S121, tf.zeros((S121.shape[0],S121.shape[1]), dtype=tf.float64))
+        S12 = tf.expand_dims(S122, -1)
+
+        # This step masks out the (a,b) diagonal. TODO: Make it optional.
+        S131 = tf.linalg.set_diag(A, tf.zeros((A.shape[0],A.shape[1]), dtype=tf.float64))
+        A = tf.expand_dims(A, -1)
+        S13 = tf.keras.backend.batch_dot(A, S12, axes=(-1,-1))
         
-        return S
+        # Pointwise multiplication of E and A part? Does this make sense?
+        S1 = S11 * S13
+
+        S21 = tf.tile(A_hat_diag, [1,1,n])
+        S2 = tf.matmul(F, F_hat_t) * tf.transpose(S21, perm=(0,2,1))     # I know this looks weird but trust me, I thought this through!
+
+        # TODO maksing
+
+        return S1, S2
 
     def affinity_loop(self, A, A_hat, E, E_hat, F, F_hat):
-        # We are going to itterate over pairs of (a,b) and (i,j)
+        # We are going to iterate over pairs of (a,b) and (i,j)
         # np.nindex is oging to make touples to avoid two extra loops.
         ij_pairs = list(np.ndindex(A.shape))
         ab_pairs = list(np.ndindex(A_hat.shape))
@@ -77,7 +125,7 @@ class MPGM():
                     S[i,j,a,b] = 0.
         return S
     
-    def max_pool(self, S, n_iterations: int=6):
+    def max_pool_loop(self, S, n_iterations: int=6):
         """
         Input: Affinity matrix
         Output: Soft assignment matrix
@@ -147,18 +195,21 @@ class MPGM():
 if __name__ == "__main__":
 
     # Let's define some dimensions :)
-    n = 4
-    k = 4
+    n = 3
+    k = 2
     d_e = 2
     d_n = 3
 
+    batch_size = 1
+
     # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
-    A = np.ones((n,n))
-    E = np.random.randint(2, size=(n,n,d_e))
-    F = np.random.randint(2, size=(n,d_n))
-    A_hat = np.random.normal(size=(k,k))
-    E_hat = np.random.normal(size=(k,k,d_e))
-    F_hat = np.random.normal(size=(k,d_n))
+    np.random.seed(seed=11)
+    A = np.random.randint(2, size=(batch_size,n,n))
+    E = np.random.randint(2, size=(batch_size,n,n,d_e))
+    F = np.random.randint(2, size=(batch_size,n,d_n))
+    A_hat = np.random.normal(size=(batch_size,k,k))
+    E_hat = np.random.normal(size=(batch_size,k,k,d_e))
+    F_hat = np.random.normal(size=(batch_size,k,d_n))
     # Make the diagonals zero
     # np.fill_diagonal(A, 0)
     # np.fill_diagonal(A_hat, 0.)
@@ -166,7 +217,7 @@ if __name__ == "__main__":
     # Test the class, actually this should go in a test function and folder. Later...
     mpgm = MPGM()
 
-    S = mpgm.affinity_loop(A, A_hat, E, E_hat, F, F_hat)
-    print(S.shape)
-    X = mpgm.max_pool(S)
-    print(mpgm.hungarian(X))
+    X = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
+    print(X)
+    X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
+    print(X2)

@@ -105,7 +105,7 @@ def mpgm_loss(A, E, F, A_hat, E_hat, F_hat):
     n = A.shape[0]
     k = A_hat.shape[0]
     mpgm = MPGM()
-    X = mpgm.call(A, A_hat, E, E_hat, F, F_hat)
+    X = mpgm.call(A.squeeze(), A_hat.numpy().squeeze(), E.squeeze(), E_hat.numpy().squeeze(), F.squeeze(), F_hat.numpy().squeeze())
 
     # now comes the loss part from the paper:
     A_t = X@A@X.T
@@ -126,7 +126,8 @@ if __name__ == "__main__":
     na = 3
     np.random.seed(seed=11)
     epochs = 111
-    batch_size = 6
+    batch_size = 1
+    # TODO optimize mpgm for batches
     
     model = VanillaGVAE(n, na, ea, h_dim=1024)
     optimizer = tf.optimizers.Adam(learning_rate=5e-4)
@@ -140,6 +141,7 @@ if __name__ == "__main__":
             z = model.reparameterize(mean, logstd)
             A_hat, E_hat, F_hat = model.decode(z)
             loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
+            print(E_hat.numpy())
             mpgm_loss(A, E, F, A_hat, E_hat, F_hat)
             print(loss.numpy())
 
