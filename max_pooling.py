@@ -53,21 +53,36 @@ class MPGM():
         return S
 
     def ident_matching_nk(bs, n, k):
-        # identity matrices as assignment
+        # Returns ... not sure anymore
 
         X = tf.zeros([bs, n, k])
         for i in range(min(k,n)):
             X[:,i,i] = 1
         return X
 
+    def S2_matching_nnkk(self, S2, bs, n, k):
+        """
+        Returns zero matrix fof shape (bs,n,n,k,k) with the (n.n) and (k,k) diagonal set as in S2.
+        Input is the S2 (bs,n,k) diagonals
+        """
+
+        X = np.zeros([bs,n,n,k,k])
+        for i in range(n):
+            tf_diag = tf.linalg.set_diag(tf.zeros([bs,k,k], dtype=tf.float64), S2[:,i,:])
+            X[:,i,i,:,:] = tf_diag.numpy()
+        print(X)
+        return X
+
     def ident_matching_nnkk(self, bs, n, k):
-        # identity matrices as assignment
+        """
+        Returns zero mask for (nn)  diagonal of a (bs,n,n,k,k) matrix.
+        Input obvsl (bs,n,n,k,k)
+        """
 
         X = np.ones([bs,n,n,k,k])
         for i in range(n):
             X[:,i,i,:,:] = 0
         return X
-
 
     def affinity(self, A, A_hat, E, E_hat, F, F_hat):
         """
@@ -120,11 +135,13 @@ class MPGM():
 
         S21 = tf.tile(A_hat_diag, [1,1,n]) # This repeats the input vector to match the F shape.
         S2 = tf.matmul(F, F_hat_t) * tf.transpose(S21, perm=(0,2,1))     # I know this looks weird but trust me, I thought this through!
+        # This puts the values on the intended diagonal to match the shape of S
+        S2 = self.S2_matching_nnkk(S2, bs, n, k)
 
         # This zero masks the (n,n) diagonal
         S1 = S1 * self.ident_matching_nnkk(bs, n, k)
 
-        return S1, S2
+        return S1 + S2
 
     def affinity_loop(self, A, A_hat, E, E_hat, F, F_hat):
         # We are going to iterate over pairs of (a,b) and (i,j)
@@ -155,6 +172,20 @@ class MPGM():
                     S[i,j,a,b] = 0.
         return S
     
+    def max_pool(self, S, n_iterations: int=30):
+        """
+        The famous Cho max pooling in matrix multiplication style.
+        Xs: X_star meaning X in continous space.
+        """
+        # Just a crazy idea, but what if we falatten the X (n,k) matrix so that we can take the dot product with S (n,flat,K).
+        Xs = tf.random.uniform(shape=[self.bs, self.n, self.k], dtype=tf.float64)
+        S = tf.reshape(S, [S.shape[0],S.shape[1],-1,S.shape[-1]])
+        for n in range(n_iterations):
+            Xs = tf.reshape(Xs, [self.bs,-1])
+            SXs = tf.keras.backend.batch_dot(S, Xs, axes=[2,1])
+            Xs = SXs / tf.norm(SXs, ord='fro', axis=[-2,-1])
+        return Xs
+
     def max_pool_loop(self, S, n_iterations: int=6):
         """
         Input: Affinity matrix
@@ -245,7 +276,9 @@ if __name__ == "__main__":
     # Test the class, actually this should go in a test function and folder. Later...
     mpgm = MPGM()
 
-    X = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
-    print(X)
-    X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
-    print(X2)
+    S = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
+    print(S)
+    Xs = mpgm.max_pool(S)
+    print(Xs)
+    # X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
+    # print(X2)
