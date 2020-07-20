@@ -32,14 +32,42 @@ class MPGM():
     
     def zero_diag(self, A, inverse=False):
         """
-        Decided to use tensors since numpy makes batch-life hard.
-        Input can be a np.array?
+        Returns either a zero matrix with only the diagonal of the input or the input matrix with the diagonal as zeros.
+        Input can be a np.array and only 2 dimensional.
         """
         if inverse:
             return tf.linalg.diag(A)
         else:       
             return tf.linalg.set_diag(A, np.zeros((A.shape[0],A.shape[1])))
         
+    def zero_diag_higher_dim(self, S):
+        """
+        Returns the input matrix with only the diagonal elements on the lowest dimensions (k,k).
+        Input has to be of shape (batch_size,n,n,k,k).
+        TODO mask the (n,n) diagonal elements as zero too!
+        """
+        batch_size, n, k = S.shape[0], S.shape[1], S.shape[3]
+        S = tf.reshape(S, [-1,k,k])
+        S = tf.linalg.set_diag(S, tf.zeros((S.shape[0],S.shape[1]), dtype=tf.float64))
+        S = tf.reshape(S, [batch_size,n,n,k,k])
+        return S
+
+    def ident_matching_nk(bs, n, k):
+        # identity matrices as assignment
+
+        X = tf.zeros([bs, n, k])
+        for i in range(min(k,n)):
+            X[:,i,i] = 1
+        return X
+
+    def ident_matching_nnkk(self, bs, n, k):
+        # identity matrices as assignment
+
+        X = np.ones([bs,n,n,k,k])
+        for i in range(n):
+            X[:,i,i,:,:] = 0
+        return X
+
 
     def affinity(self, A, A_hat, E, E_hat, F, F_hat):
         """
@@ -62,9 +90,10 @@ class MPGM():
         self.n = n
         k = A_hat.shape[1]
         self.k = k
+        bs = A.shape[0]     # bs stands for batch size, just to clarify.
+        self.bs = bs
 
         F_hat_t = tf.transpose(F_hat, perm=(0,2,1))
-        # We don't need to mask sht. We only need the diagonal. Duh..
         A_hat_diag = tf.expand_dims(tf.linalg.diag_part(A_hat),-1)
         A_hat_diag_t = tf.transpose(A_hat_diag, perm=[0, 2, 1])
 
@@ -89,10 +118,11 @@ class MPGM():
         # Pointwise multiplication of E and A part? Does this make sense?
         S1 = S11 * S13
 
-        S21 = tf.tile(A_hat_diag, [1,1,n])
+        S21 = tf.tile(A_hat_diag, [1,1,n]) # This repeats the input vector to match the F shape.
         S2 = tf.matmul(F, F_hat_t) * tf.transpose(S21, perm=(0,2,1))     # I know this looks weird but trust me, I thought this through!
 
-        # TODO maksing
+        # This zero masks the (n,n) diagonal
+        S1 = S1 * self.ident_matching_nnkk(bs, n, k)
 
         return S1, S2
 
@@ -210,9 +240,7 @@ if __name__ == "__main__":
     A_hat = np.random.normal(size=(batch_size,k,k))
     E_hat = np.random.normal(size=(batch_size,k,k,d_e))
     F_hat = np.random.normal(size=(batch_size,k,d_n))
-    # Make the diagonals zero
-    # np.fill_diagonal(A, 0)
-    # np.fill_diagonal(A_hat, 0.)
+
 
     # Test the class, actually this should go in a test function and folder. Later...
     mpgm = MPGM()
