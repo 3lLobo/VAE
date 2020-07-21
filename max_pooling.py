@@ -4,6 +4,7 @@ Implementation of the max-pooling graph matching algorithm.
 import networkx as nx
 import numpy as np
 from numpy import array
+from scipy.optimize import linear_sum_assignment
 import tensorflow as tf
 from munkres import Munkres, print_matrix, make_cost_matrix
 
@@ -183,7 +184,7 @@ class MPGM():
         for n in range(n_iterations):
             Xs = tf.reshape(Xs, [self.bs,-1])
             SXs = tf.keras.backend.batch_dot(S, Xs, axes=[2,1])
-            Xs = SXs / tf.norm(SXs, ord='fro', axis=[-2,-1])
+            Xs = SXs / tf.norm(SXs, ord='fro', axis=[-2,-1])[:,tf.newaxis,tf.newaxis]
         return Xs
 
     def max_pool_loop(self, S, n_iterations: int=6):
@@ -245,11 +246,23 @@ class MPGM():
             X[idx] = 1
         return X
 
-        
+    # def hungarian_batch(self, Xs):
+    #     Xs = Xs.numpy()
+    #     X = np.zeros((self.bs, self.k, self.k))
+    #     for i in range(Xs.shape[0]):
+    #         hung = np.expand_dims(linear_sum_assignment(np.squeeze(X[i,:,:])), axis=0)
+    #         X[i,:,:] = hung
+    #     return X
 
-
-
-
+    def hungarian_batch(self, X):
+        X = X.numpy()
+        for i in range(X.shape[0]):
+            # We are always given square Xs, but some may have unused columns (ground truth nodes are not there), so we can crop them for speedup. It's also then equivalent to the original non-batched version.
+            row_ind, col_ind = linear_sum_assignment(X[i])
+            M = np.zeros(X[i].shape, dtype=np.float32)
+            M[row_ind, col_ind] = 1
+            X[i] = M
+        return X
 
 
 
@@ -257,11 +270,11 @@ if __name__ == "__main__":
 
     # Let's define some dimensions :)
     n = 3
-    k = 2
+    k = 3
     d_e = 2
     d_n = 3
 
-    batch_size = 1
+    batch_size = 16
 
     # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
     np.random.seed(seed=11)
@@ -279,6 +292,7 @@ if __name__ == "__main__":
     S = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
     print(S)
     Xs = mpgm.max_pool(S)
-    print(Xs)
+    X = mpgm.hungarian_batch(Xs)
+    print(X)
     # X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
     # print(X2)
