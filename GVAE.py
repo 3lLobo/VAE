@@ -3,11 +3,13 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Input, Dense, Flatten, Reshape
 import tensorflow_probability as tfp
 import numpy as np
+import time
 from max_pooling import MPGM
+from utils import mk_random_graph_ds
 
 
 class VanillaGVAE(Model):
-    def __init__(self, n: int, na: int, ea: int, h_dim: int=512, z_dim: int=2):
+    def __init__(self, n: int, ea: int, na: int, h_dim: int=512, z_dim: int=2):
         """
         Graph Variational Auto Encoder
         Args:
@@ -39,7 +41,7 @@ class VanillaGVAE(Model):
             ]
         )
         
-    def encode(self, A, E, F):
+    def encode(self, args_in):
         """
         The encoder predicts a mean and logarithm of std of the prior distribution for the decoder.
         Args:
@@ -47,6 +49,7 @@ class VanillaGVAE(Model):
             E: Edge attribute matrix of size n*n*ea
             F: Node attribute matrix of size n*na
         """
+        (A, E, F) = args_in
         a = tf.reshape(A, (-1, self.n*self.n))
         e = tf.reshape(E, (-1, self.n*self.n*self.ea))
         f = tf.reshape(F, (-1, self.n*self.na))
@@ -56,6 +59,7 @@ class VanillaGVAE(Model):
         
     def decode(self, z):
         logits = self.decoder(z)
+        logits = tf.cast(logits, dtype=tf.float64)
         delimit_a = self.n*self.n
         delimit_e = self.n*self.n + self.n*self.n*self.ea
 
@@ -97,20 +101,21 @@ def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     return loss
 
 
-def mpgm_loss(A, E, F, A_hat, E_hat, F_hat):
+def mpgm_loss(target, prediction):
     """
     Loss function using max-pooling graph matching as describes in the GraphVAE paper.
     Lets see if backprop works. Args obvly the same as above!
     """
+    A, E, F = target
+    A_hat, E_hat, F_hat = prediction
     n = A.shape[0]
     k = A_hat.shape[0]
     mpgm = MPGM()
-    X = mpgm.call(A.squeeze(), A_hat.numpy().squeeze(), E.squeeze(), E_hat.numpy().squeeze(), F.squeeze(), F_hat.numpy().squeeze())
+    X = mpgm.call(A, A_hat, E, E_hat, F, F_hat)
 
     # now comes the loss part from the paper:
-    A_t = X@A@X.T
+    A_t = tf.transpose(X, perm=[0,2,1] @ A@ X
     # or:
-    A_t = tf.matmul(tf.matmul(X, A), X.T)
     E_hat_t = tf.matmul(tf.matmul(X, E_hat), X.T)
     F_hat_t = tf.matmul(X, F_hat)
     log_p_A = 1/k 
@@ -122,33 +127,37 @@ def mpgm_loss(A, E, F, A_hat, E_hat, F_hat):
 
 if __name__ == "__main__":
     n = 5
-    ea = 5
-    na = 3
+    d_e = 5
+    d_n = 3
     np.random.seed(seed=11)
     epochs = 111
-    batch_size = 1
-    # TODO optimize mpgm for batches
-    
-    model = VanillaGVAE(n, na, ea, h_dim=1024)
+    batch_size = 128
+
+    train_set = mk_random_graph_ds(n, d_e, d_n, 400, batch_size=batch_size)
+    test_set = mk_random_graph_ds(n, d_e, d_n, 100, batch_size=batch_size)
+
+    model = VanillaGVAE(n, d_e, d_n, h_dim=1024)
     optimizer = tf.optimizers.Adam(learning_rate=5e-4)
-    A = np.random.randint(2, size=(batch_size, n, n))
-    E = np.random.randint(2, size=(batch_size, n, n, ea))
-    F = np.random.randint(2, size=(batch_size, n, na))    
+   
     for epoch in range(epochs):
         # loss.backward
-        with tf.GradientTape() as tape:
-            mean, logstd = model.encode(A, E, F)
+        start_time = time.time()
+        for target in train_set:
+            with tf.GradientTape() as tape:
+                mean, logstd = model.encode(target)
+                z = model.reparameterize(mean, logstd)
+                prediction = model.decode(z)
+                loss = mpgm_loss(target, prediction)
+                print(loss.numpy())
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        end_time = time.time()
+        mean_loss = tf.keras.metrics.Mean()
+        for test_x in test_ds:
+            mean, logstd = model.encode(target)
             z = model.reparameterize(mean, logstd)
-            A_hat, E_hat, F_hat = model.decode(z)
-            loss = graph_loss(A, E, F, A_hat, E_hat, F_hat)
-            print(E_hat.numpy())
-            mpgm_loss(A, E, F, A_hat, E_hat, F_hat)
-            print(loss.numpy())
-
-        gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    print(A)
-    A_hat = np.array(A_hat)
-    A_hat[A_hat>.5] = 1.
-    A_hat[A_hat<=.5] = 0.
-    print('Pred:', A_hat)
+            prediction = model.decode(z)
+            loss = mpgm_loss(target, prediction)
+            mean_loss(loss)
+        print('Epoch: {}, Test set ELBO: {}, time elapse for current epoch: {}'
+                .format(epoch, mean_loss.result(), end_time - start_time))

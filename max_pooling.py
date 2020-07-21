@@ -14,23 +14,26 @@ class MPGM():
         pass
 
     def call(self, A, A_hat, E, E_hat, F, F_hat):
+        """
+        Call the entire max_pooling algorithm.
+        Input are the target and prediction matrices.
+        Output is the discrete X matrix.
+        """
         S = self.affinity(A, A_hat, E, E_hat, F, F_hat)
         X_star = self.max_pool(S)
+        X = self.hungarian_batch(X_star)
+        return X
+
+    def call_test(self, A, A_hat, E, E_hat, F, F_hat):
+        """
+        A test run, does not work with batches. 1 to 1 implementation of the paper.
+        Use this to verify your results if you decide to play around with the batch code.
+        """
+        S = self.affinity_loop(A, A_hat, E, E_hat, F, F_hat)
+        X_star = self.max_pool_loop(S)
         X = self.hungarian(X_star)
         return X
 
-    
-    # def zero_mask_diag(self, A, inverse=False):
-    #     # creates mask to zero out the diagonal matrix
-    #     # If inverse is ser to true it returns a matrix with only the diagonal values
-    #     if inverse:
-    #         zeros = np.zeros_like(A)
-    #         np.fill_diagonal(zeros, np.diag(A))
-    #         return zeros
-    #     else:       
-    #         np.fill_diagonal(A, 0) 
-    #         return A
-    
     def zero_diag(self, A, inverse=False):
         """
         Returns either a zero matrix with only the diagonal of the input or the input matrix with the diagonal as zeros.
@@ -40,18 +43,6 @@ class MPGM():
             return tf.linalg.diag(A)
         else:       
             return tf.linalg.set_diag(A, np.zeros((A.shape[0],A.shape[1])))
-        
-    def zero_diag_higher_dim(self, S):
-        """
-        Returns the input matrix with only the diagonal elements on the lowest dimensions (k,k).
-        Input has to be of shape (batch_size,n,n,k,k).
-        TODO mask the (n,n) diagonal elements as zero too!
-        """
-        batch_size, n, k = S.shape[0], S.shape[1], S.shape[3]
-        S = tf.reshape(S, [-1,k,k])
-        S = tf.linalg.set_diag(S, tf.zeros((S.shape[0],S.shape[1]), dtype=tf.float64))
-        S = tf.reshape(S, [batch_size,n,n,k,k])
-        return S
 
     def ident_matching_nk(bs, n, k):
         # Returns ... not sure anymore
@@ -61,20 +52,19 @@ class MPGM():
             X[:,i,i] = 1
         return X
 
-    def S2_matching_nnkk(self, S2, bs, n, k):
+    def set_diag_nnkk(self, S2, bs, n, k):
         """
         Returns zero matrix fof shape (bs,n,n,k,k) with the (n.n) and (k,k) diagonal set as in S2.
-        Input is the S2 (bs,n,k) diagonals
+        Input is the S2 (bs,n,k) diagonals.
         """
 
         X = np.zeros([bs,n,n,k,k])
         for i in range(n):
             tf_diag = tf.linalg.set_diag(tf.zeros([bs,k,k], dtype=tf.float64), S2[:,i,:])
             X[:,i,i,:,:] = tf_diag.numpy()
-        print(X)
         return X
 
-    def ident_matching_nnkk(self, bs, n, k):
+    def zero_diag_nnkk(self, bs, n, k):
         """
         Returns zero mask for (nn)  diagonal of a (bs,n,n,k,k) matrix.
         Input obvsl (bs,n,n,k,k)
@@ -108,7 +98,7 @@ class MPGM():
         self.k = k
         bs = A.shape[0]     # bs stands for batch size, just to clarify.
         self.bs = bs
-
+        F_hat = F_hat = tf.cast(F_hat, dtype=tf.float64)
         F_hat_t = tf.transpose(F_hat, perm=(0,2,1))
         A_hat_diag = tf.expand_dims(tf.linalg.diag_part(A_hat),-1)
         A_hat_diag_t = tf.transpose(A_hat_diag, perm=[0, 2, 1])
@@ -121,26 +111,22 @@ class MPGM():
         S11 = tf.keras.backend.batch_dot(E, E_hat, axes=(3, 3))   # Crazy that this function even exists. We aim for shape (batch_s,n,n,k,k).
 
         # Now we need to get the second part into shape (batch_s,n,n,k,k).
-        S121 = A_hat * (A_hat_diag @ A_hat_diag_t)
+        S121 = tf.cast(A_hat * (A_hat_diag @ A_hat_diag_t), dtype=tf.float64)
         # This step masks out the (a,b) diagonal. TODO: Make it optional.
-        S122 = tf.linalg.set_diag(S121, tf.zeros((S121.shape[0],S121.shape[1]), dtype=tf.float64))
-        S12 = tf.expand_dims(S122, -1)
+        S12 = tf.expand_dims(tf.linalg.set_diag(S121, tf.zeros((S121.shape[0],S121.shape[1]), dtype=tf.float64)),-1)
 
-        # This step masks out the (a,b) diagonal. TODO: Make it optional.
-        S131 = tf.linalg.set_diag(A, tf.zeros((A.shape[0],A.shape[1]), dtype=tf.float64))
         A = tf.expand_dims(A, -1)
         S13 = tf.keras.backend.batch_dot(A, S12, axes=(-1,-1))
-        
+
         # Pointwise multiplication of E and A part? Does this make sense?
         S1 = S11 * S13
 
-        S21 = tf.tile(A_hat_diag, [1,1,n]) # This repeats the input vector to match the F shape.
+        S21 = tf.cast(tf.tile(A_hat_diag, [1,1,n]), dtype=tf.float64)     # This repeats the input vector to match the F shape.
         S2 = tf.matmul(F, F_hat_t) * tf.transpose(S21, perm=(0,2,1))     # I know this looks weird but trust me, I thought this through!
-        # This puts the values on the intended diagonal to match the shape of S
-        S2 = self.S2_matching_nnkk(S2, bs, n, k)
+        S2 = self.set_diag_nnkk(S2, bs, n, k)    # This puts the values on the intended diagonal to match the shape of S
 
         # This zero masks the (n,n) diagonal
-        S1 = S1 * self.ident_matching_nnkk(bs, n, k)
+        S1 = S1 * self.zero_diag_nnkk(bs, n, k)
 
         return S1 + S2
 
@@ -173,12 +159,12 @@ class MPGM():
                     S[i,j,a,b] = 0.
         return S
     
-    def max_pool(self, S, n_iterations: int=30):
+    def max_pool(self, S, n_iterations: int=300):
         """
-        The famous Cho max pooling in matrix multiplication style.
-        Xs: X_star meaning X in continous space.
+        The famous Cho max-pooling in matrix multiplication style.
+        Xs: X_star meaning X in continuos space.
         """
-        # Just a crazy idea, but what if we falatten the X (n,k) matrix so that we can take the dot product with S (n,flat,K).
+        # Just a crazy idea, but what if we flatten the X (n,k) matrix so that we can take the dot product with S (n,flat,K).
         Xs = tf.random.uniform(shape=[self.bs, self.n, self.k], dtype=tf.float64)
         S = tf.reshape(S, [S.shape[0],S.shape[1],-1,S.shape[-1]])
         for n in range(n_iterations):
@@ -208,7 +194,7 @@ class MPGM():
         assert ia_pairs[-1] == (n-1,k-1), 'Dimensions should be ({},{}) but are {}'.format(n-1,k-1,ia_pairs[-1])
 
         #loop over iterations and paris
-        for itt in range(n_iterations):
+        for it in range(n_iterations):
             for (i, a) in ia_pairs:
                 # TODO the paper says argmax and sum over the 'neighbors' of node pair (i,a).
                 # My interpretation is that when there is no neighbor the S matrix will be zero, there fore we still use j anb b in full rage.
@@ -218,15 +204,13 @@ class MPGM():
                 # In the next term we only consider the node matches (ia;ia).
                 X[i,a] = X[i,a] * S[i,i,a,a] + de_sum
             # Normalize X to range [0,1].
-            print(np.linalg.norm(X))
-            print(X)
             X = X * 1./np.linalg.norm(X)
         return X
 
-    def hungarian(self, X_star, cost: bool=True):
+    def hungarian(self, X_star, cost: bool=False):
         
         """ 
-        Apply the hungarian or munkes algorithm to the continuous assignment matrix.
+        Apply the hungarian or munkres algorithm to the continuous assignment matrix.
         The output is a discrete similarity matrix.
         Are we working with a cost or a profit matrix???
         Args:
@@ -238,21 +222,12 @@ class MPGM():
             X_star = make_cost_matrix(X_star)
         # Compute the indexes for the matrix for the lowest cost path.        
         indexes = m.compute(X_star)
-        print(indexes[0])
 
         # Now mast these indexes with 1 and the rest with 0.
         X = np.zeros_like(X_star, dtype=int)
         for idx in indexes:
             X[idx] = 1
         return X
-
-    # def hungarian_batch(self, Xs):
-    #     Xs = Xs.numpy()
-    #     X = np.zeros((self.bs, self.k, self.k))
-    #     for i in range(Xs.shape[0]):
-    #         hung = np.expand_dims(linear_sum_assignment(np.squeeze(X[i,:,:])), axis=0)
-    #         X[i,:,:] = hung
-    #     return X
 
     def hungarian_batch(self, X):
         X = X.numpy()
@@ -274,7 +249,7 @@ if __name__ == "__main__":
     d_e = 2
     d_n = 3
 
-    batch_size = 16
+    batch_size = 1
 
     # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
     np.random.seed(seed=11)
@@ -290,9 +265,10 @@ if __name__ == "__main__":
     mpgm = MPGM()
 
     S = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
-    print(S)
     Xs = mpgm.max_pool(S)
     X = mpgm.hungarian_batch(Xs)
     print(X)
-    # X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
-    # print(X2)
+    X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
+    X2 = mpgm.max_pool_loop(X2)
+    X2 = mpgm.hungarian(X2)
+    print(X2)
