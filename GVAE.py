@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tf.linalg import set_diag, diag
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Input, Dense, Flatten, Reshape
 import tensorflow_probability as tfp
@@ -101,7 +102,7 @@ def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     return loss
 
 
-def mpgm_loss(target, prediction):
+def mpgm_loss(target, prediction, k=1., n=1.):
     """
     Loss function using max-pooling graph matching as describes in the GraphVAE paper.
     Lets see if backprop works. Args obvly the same as above!
@@ -114,12 +115,27 @@ def mpgm_loss(target, prediction):
     X = mpgm.call(A, A_hat, E, E_hat, F, F_hat)
 
     # now comes the loss part from the paper:
-    A_t = tf.transpose(X, perm=[0,2,1] @ A@ X
-    # or:
+    A_t = tf.transpose(X, perm=[0,2,1]) @ A @ X
+
+    # TODO fill in
     E_hat_t = tf.matmul(tf.matmul(X, E_hat), X.T)
     F_hat_t = tf.matmul(X, F_hat)
-    log_p_A = 1/k 
-    pass
+
+    # jA, VIEL SPASS
+    part2 = (tf.ones_like(A_t) - diag(A_t)).T @ tf.math.log(tf.ones_like(A_hat) - diag(A_hat))
+    # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
+    part31 = set_diag(A_t, tf.zeros_like(A_t)) * tf.math.log(set_diag(A_hat, tf.zeros_like(A_hat)))
+    part32 = tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(A_t)) * tf.math.log(tf.ones_like(A_t) - set_diag(A_hat, tf.zeros_like(A_hat)))
+    part3 = (1/k*(1-k)) * tf.math.reduce_sum(part31 + part32)
+    log_p_A = (1/k) * diag_part(A_t).T @ tf.math.log(diag_part(A_hat)) + part2 + part3
+
+    # Man so many confusions: is the log over one or both Fs???
+    log_p_F = (1/n) * tf.math.reduce_sum(tf.math.log(F.T) @ F_hat_t)
+
+    log_p_E = (1/tf.norm(A, ord='frob')) * tf.math.reduce_sum(tf.math.log(E.T) @ E_hat_t)
+
+    loss = - l_A * log_p_A - l_F * log_p_F - l_E * log_p_E
+    return loss
 
 
 
