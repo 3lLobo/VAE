@@ -123,7 +123,8 @@ def mpgm_loss(target, prediction, k=1., n=1.):
 
     p1 = diag_part(A_t) * tf.math.log(diag_part(A_hat))
     part1 = (1/k) * tf.math.reduce_sum(p1)
-    part2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat))))
+    part2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat))))       # TODO reduce sum BUT NOT OVER BATCHES!!! Dumbass
+    
     # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
     b = diag_part(A_t)
     part31 = tf.matmul(set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
