@@ -230,7 +230,7 @@ class MPGM():
         return X
 
     def hungarian_batch(self, X):
-        X = X.numpy()
+        X = tf.cast(X, dtype=tf.int64).numpy()
         for i in range(X.shape[0]):
             # We are always given square Xs, but some may have unused columns (ground truth nodes are not there), so we can crop them for speedup. It's also then equivalent to the original non-batched version.
             row_ind, col_ind = linear_sum_assignment(X[i])
@@ -242,6 +242,10 @@ class MPGM():
 
 
 if __name__ == "__main__":
+
+    #Dear TensorFlow,
+    #What I always wanted to tell you:
+    tf.keras.backend.set_floatx('float64')
 
     # Let's define some dimensions :)
     n = 3
