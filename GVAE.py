@@ -103,39 +103,39 @@ def graph_loss(A, E, F, A_hat, E_hat, F_hat):
     return loss
 
 
-def mpgm_loss(target, prediction, k=1., n=1.):
+def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     """
     Loss function using max-pooling graph matching as describes in the GraphVAE paper.
     Lets see if backprop works. Args obvly the same as above!
     """
     A, E, F = target
     A_hat, E_hat, F_hat = prediction
-    n = A.shape[0]
-    k = A_hat.shape[0]
+    n = A.shape[1]
+    k = A_hat.shape[1]
     mpgm = MPGM()
     X = tf.cast(mpgm.call(A, A_hat, E, E_hat, F, F_hat), dtype=tf.float64)
 
     # now comes the loss part from the paper:
     A_t = tf.transpose(X, perm=[0,2,1]) @ A @ X     # shape (bs,k,n)
-
-    E_hat_t = batch_dot(batch_dot(X, E_hat, axes=(-1,1)), X, axes=(-2,-1))
+    E_hat_t = tf.transpose(batch_dot(batch_dot(X, E_hat, axes=(-1,1)), X, axes=(-2,1)), perm=[0,1,3,2])
     F_hat_t = tf.matmul(X, F_hat)
-
-    p1 = diag_part(A_t) * tf.math.log(diag_part(A_hat))
-    part1 = (1/k) * tf.math.reduce_sum(p1)
-    part2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat))))       # TODO reduce sum BUT NOT OVER BATCHES!!! Dumbass
+    term_1 = (1/k) * tf.math.reduce_sum(diag_part(A_t) * tf.math.log(diag_part(A_hat)), [1], keepdims=True)
+    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat))), [1], keepdims=True) 
     
     # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
     b = diag_part(A_t)
-    part31 = tf.matmul(set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
-    part32 = tf.matmul(tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(tf.ones_like(A_t) - set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
-    part3 = (1/k*(1-k)) * tf.math.reduce_sum(part31 + part32)
-    log_p_A = part1 + part2 + part3
+    term_31 = tf.matmul(set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
+    term_32 = tf.matmul(tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(tf.ones_like(A_t) - set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
+    term_3 = (1/k*(1-k)) * tf.expand_dims(tf.math.reduce_sum(term_31 + term_32, [1,2]), -1)
+    log_p_A = term_1 + term_2 + term_3
 
     # Man so many confusions: is the log over one or both Fs???
-    log_p_F = (1/n) * tf.math.reduce_sum(tf.math.log(F.T) @ F_hat_t)
+    F = tf.cast(F, dtype=tf.float64)
+    A = tf.cast(A, dtype=tf.float64)
+    E = tf.cast(E, dtype=tf.float64)
+    log_p_F = (1/n) * tf.expand_dims(tf.math.reduce_sum(tf.math.log(F) @ F_hat_t, [1,2]), -1)
 
-    log_p_E = (1/(tf.norm(A, ord='frob')-n)) * tf.math.reduce_sum(tf.math.log(E.T) @ E_hat_t)
+    log_p_E = tf.expand_dims((1/(tf.norm(A, ord='fro', axis=[-2,-1])-n)) * tf.math.reduce_sum(tf.math.log(E) * E_hat_t,  [1,2,3]), -1)
 
     loss = - l_A * log_p_A - l_F * log_p_F - l_E * log_p_E
     return loss
@@ -155,7 +155,7 @@ if __name__ == "__main__":
     d_n = 3
     np.random.seed(seed=11)
     epochs = 111
-    batch_size = 16
+    batch_size = 4
 
     train_set = mk_random_graph_ds(n, d_e, d_n, 400, batch_size=batch_size)
     test_set = mk_random_graph_ds(n, d_e, d_n, 100, batch_size=batch_size)
