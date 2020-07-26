@@ -141,7 +141,7 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     return loss
 
 
-
+# Issa Sunday
 
 
 if __name__ == "__main__":
@@ -150,12 +150,12 @@ if __name__ == "__main__":
     #What I always wanted to tell you:
     tf.keras.backend.set_floatx('float64')
 
-    n = 3
-    d_e = 5
-    d_n = 3
+    n = 20
+    d_e = 11
+    d_n = 20
     np.random.seed(seed=11)
     epochs = 111
-    batch_size = 4
+    batch_size = 16
 
     train_set = mk_random_graph_ds(n, d_e, d_n, 400, batch_size=batch_size)
     test_set = mk_random_graph_ds(n, d_e, d_n, 100, batch_size=batch_size)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         end_time = time.time()
         mean_loss = tf.keras.metrics.Mean()
-        for test_x in test_ds:
+        for test_x in test_set:
             mean, logstd = model.encode(target)
             z = model.reparameterize(mean, logstd)
             prediction = model.decode(z)
