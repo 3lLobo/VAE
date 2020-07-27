@@ -119,13 +119,21 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     A_t = tf.transpose(X, perm=[0,2,1]) @ A @ X     # shape (bs,k,n)
     E_hat_t = tf.transpose(batch_dot(batch_dot(X, E_hat, axes=(-1,1)), X, axes=(-2,1)), perm=[0,1,3,2])
     F_hat_t = tf.matmul(X, F_hat)
-    term_1 = (1/k) * tf.math.reduce_sum(diag_part(A_t) * tf.math.log(diag_part(A_hat)), [1], keepdims=True)
-    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat))), [1], keepdims=True) 
+    # To avoid inf or nan errors we add the smallest possible value to all elements.
+    A_hat_4log = add_e7(A_hat)
+
+    term_1 = (1/k) * tf.math.reduce_sum(diag_part(A_t) * tf.math.log(diag_part(A_hat_4log)), [1], keepdims=True)
+
+
+    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat_4log))), [1], keepdims=True) 
     
     # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
     b = diag_part(A_t)
-    term_31 = tf.matmul(set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
-    term_32 = tf.matmul(tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(diag_part(A_t))), tf.math.log(tf.ones_like(A_t) - set_diag(A_hat, tf.zeros_like(diag_part(A_hat)))), transpose_a=True)
+    term_31 = set_diag(A_t, tf.zeros_like(diag_part(A_t))) * tf.math.log(set_diag(A_hat_4log, tf.zeros_like(diag_part(A_hat))))
+    term_31 = replace_nan(term_31)        # You know why!
+
+    term_32 = tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(diag_part(A_t))) * tf.math.log(tf.ones_like(A_t) - set_diag(A_hat_4log, tf.zeros_like(diag_part(A_hat))))
+
     term_3 = (1/k*(1-k)) * tf.expand_dims(tf.math.reduce_sum(term_31 + term_32, [1,2]), -1)
     log_p_A = term_1 + term_2 + term_3
 
@@ -133,13 +141,25 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     F = tf.cast(F, dtype=tf.float64)
     A = tf.cast(A, dtype=tf.float64)
     E = tf.cast(E, dtype=tf.float64)
-    log_p_F = (1/n) * tf.expand_dims(tf.math.reduce_sum(tf.math.log(F) @ F_hat_t, [1,2]), -1)
+    log_p_F = (1/n) * tf.expand_dims(tf.math.reduce_sum(tf.math.log(add_e7(F * F_hat_t)), [1,2]), -1)
 
-    log_p_E = tf.expand_dims((1/(tf.norm(A, ord='fro', axis=[-2,-1])-n)) * tf.math.reduce_sum(tf.math.log(E) * E_hat_t,  [1,2,3]), -1)
+    log_p_E = tf.expand_dims((1/(tf.norm(A, ord='fro', axis=[-2,-1])-n)) * tf.math.reduce_sum(tf.math.log(add_e7(E * E_hat_t)),  [1,2,3]), -1)
 
     loss = - l_A * log_p_A - l_F * log_p_F - l_E * log_p_E
     return loss
 
+
+def replace_nan(t):
+    """
+    Function to replace NaNs.
+    """
+    return tf.where(tf.math.is_nan(t), tf.zeros_like(t), t)
+
+def add_e7(t):
+    """
+    Function to add a very small value to each element, to avoid inf errors when taking the logarithm.
+    """
+    return t + tf.ones_like(t) * 1e-7
 
 # Issa Sunday
 
@@ -150,12 +170,12 @@ if __name__ == "__main__":
     #What I always wanted to tell you:
     tf.keras.backend.set_floatx('float64')
 
-    n = 20
-    d_e = 11
-    d_n = 20
+    n = 5
+    d_e = 3
+    d_n = 2
     np.random.seed(seed=11)
     epochs = 111
-    batch_size = 16
+    batch_size = 64
 
     train_set = mk_random_graph_ds(n, d_e, d_n, 400, batch_size=batch_size)
     test_set = mk_random_graph_ds(n, d_e, d_n, 100, batch_size=batch_size)
@@ -172,7 +192,7 @@ if __name__ == "__main__":
                 z = model.reparameterize(mean, logstd)
                 prediction = model.decode(z)
                 loss = mpgm_loss(target, prediction)
-                print(loss.numpy())
+                print(loss.numpy().mean())
             gradients = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         end_time = time.time()
