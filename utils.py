@@ -3,7 +3,7 @@ Utility functions.
 """
 
 import numpy as np
-
+import tensorflow as tf
 
 def mk_random_graph(n: int, d_e: int, d_n: int, batch_size: int=1, target: bool=True):
     """
@@ -37,6 +37,21 @@ def mk_random_graph_ds(n: int, d_e: int, d_n: int, batches: int=1, batch_size: i
     for i in range(batches):
         ds.append(mk_random_graph(n,d_e,d_n,batch_size,target))
     return ds
+
+
+
+def replace_nan(t):
+    """
+    Function to replace NaNs.
+    """
+    return tf.where(tf.math.is_nan(t), tf.zeros_like(t), t)
+
+def add_e7(t):
+    """
+    Function to add a very small value to each element, to avoid inf errors when taking the logarithm.
+    """
+    return t + tf.ones_like(t) * 1e-7
+
     
 
 
