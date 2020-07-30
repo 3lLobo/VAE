@@ -42,42 +42,53 @@ class MPGM():
             X[:,i,i] = 1
         return X
     
-    def torch_set_diag_zero(self, t, filler=0.):
+    def torch_set_diag(self, t, filler=0.):
         """
         Pytorch fix of fill_diagonal for batches.
+        The original function fill_diagonal_ only takes inputs with same dimensions. This makes it unsuited for batches.
+        By reshaping it to two dimensions only we work around.
         """
-        t_shape = t.shape()
+        t_shape = t.shape
         t = torch.reshape(t, (-1, t_shape[-1])).fill_diagonal_(filler, wrap=True)
         return torch.reshape(t, t_shape)
 
-####################################################################
-############                                            ############
-############            THIS IS WHERE IS STOPPED        ############
-############                                            ############
-####################################################################
-
     def set_diag_nnkk(self, S2, bs, n, k):
         """
-        Returns zero matrix fof shape (bs,n,n,k,k) with the (n.n) and (k,k) diagonal set as in S2.
+        Returns zero matrix of shape (bs,n,n,k,k) with the (n.n) and (k,k) diagonal set as in S2.
         Input is the S2 (bs,n,k) diagonals.
+        TODO this is not differentiable!!! - no need to!
         """
-
         X = np.zeros([bs,n,n,k,k])
         for i in range(n):
-            tf_diag = tf.linalg.set_diag(torch.zeros([bs,k,k]), S2[:,i,:])
-            X[:,i,i,:,:] = tf_diag.numpy()
+            the_diag = torch.diag_embed(S2[:,i,:])
+            X[:,i,i,:,:] = the_diag
         return X
+    
 
-    def zero_diag_nnkk(self, bs, n, k):
+    def zero_diag_nnkk(self, bs, n, k, inverse=False):
         """
         Returns zero mask for (nn)  diagonal of a (bs,n,n,k,k) matrix.
         Input obvsl (bs,n,n,k,k)
+        If inverse we inverse the mask.
         """
-
         X = np.ones([bs,n,n,k,k])
+        if inverse:
+            X = np.zeros([bs,n,n,k,k])
         for i in range(n):
             X[:,i,i,:,:] = 0
+            if inverse:
+                X[:,i,i,:,:] = 1
         return X
+    
+    def torch_batch_dot(self, M1, M2, dim1, dim2):
+        """
+        Torch implementation of the batch dot matrix multiplication.
+        """
+        M1_shape = M1.shape
+        M2_shape = M2.shape
+        bs = M1_shape[0]
+        M3 = torch.matmul(M1.view(bs,-1,M1_shape[dim1]),M2.view(bs,M2_shape[dim2],-1)).view(bs,M1_shape[1],M1_shape[2],M2_shape[1],M2_shape[2])
+        return M3
 
     def affinity(self, A, A_hat, E, E_hat, F, F_hat):
         """
@@ -102,31 +113,30 @@ class MPGM():
         self.k = k
         bs = A.shape[0]     # bs stands for batch size, just to clarify.
         self.bs = bs
-        F_hat = F_hat = tf.cast(F_hat, dtype=tf.float64)
-        F_hat_t = tf.transpose(F_hat, perm=(0,2,1))
-        A_hat_diag = tf.expand_dims(tf.linalg.diag_part(A_hat),-1)
-        A_hat_diag_t = tf.transpose(A_hat_diag, perm=[0, 2, 1])
 
-        # Cast the matices to tensors, bc the function tensordot only takes tensors..
-        F = tf.cast(F, dtype=tf.float64)
-        A = tf.cast(A, dtype=tf.float64)
-        E = tf.cast(E, dtype=tf.float64)
-        E_hat = tf.cast(E_hat, dtype=tf.float64) 
-        S11 = tf.keras.backend.batch_dot(E, E_hat, axes=(3, 3))   # Crazy that this function even exists. We aim for shape (batch_s,n,n,k,k).
+        F = torch.tensor(F).to(float)
+        A = torch.tensor(A).to(float)
+        E = torch.tensor(E).to(float)
+
+        F_hat_t = torch.transpose(F_hat, 1, 2)
+        A_hat_diag = (torch.diagonal(A_hat,dim1=-2,dim2=-1)).unsqueeze(-1)
+        A_hat_diag_t = torch.transpose(A_hat_diag, 2, 1)
+
+        S11 = self.torch_batch_dot(E, E_hat, 3, 3)   # We aim for shape (batch_s,n,n,k,k).
 
         # Now we need to get the second part into shape (batch_s,n,n,k,k).
-        S121 = tf.cast(A_hat * (A_hat_diag @ A_hat_diag_t), dtype=tf.float64)
+        S121 = A_hat_diag @ A_hat_diag_t
         # This step masks out the (a,b) diagonal. TODO: Make it optional.
-        S12 = tf.expand_dims(tf.linalg.set_diag(S121, tf.zeros((S121.shape[0],S121.shape[1]), dtype=tf.float64)),-1)
+        S12 = self.torch_set_diag(S121).unsqueeze(-1)
 
-        A = tf.expand_dims(A, -1)
-        S13 = tf.keras.backend.batch_dot(A, S12, axes=(-1,-1))
+        A = A.unsqueeze(-1)
+        S13 = self.torch_batch_dot(A, S12, -1, -1)
 
-        # Pointwise multiplication of E and A part? Does this make sense?
+        # Pointwise multiplication of E and A matrices
         S1 = S11 * S13
 
-        S21 = tf.cast(tf.tile(A_hat_diag, [1,1,n]), dtype=tf.float64)     # This repeats the input vector to match the F shape.
-        S2 = tf.matmul(F, F_hat_t) * tf.transpose(S21, perm=(0,2,1))     # I know this looks weird but trust me, I thought this through!
+        S21 = A_hat_diag.expand(bs,k,n)  # This repeats the input vector to match the F shape.
+        S2 = torch.matmul(F, F_hat_t) * torch.transpose(S21, 2, 1)      # I know this looks weird but trust me, I thought this through!
         S2 = self.set_diag_nnkk(S2, bs, n, k)    # This puts the values on the intended diagonal to match the shape of S
 
         # This zero masks the (n,n) diagonal
@@ -169,12 +179,12 @@ class MPGM():
         Xs: X_star meaning X in continuos space.
         """
         # Just a crazy idea, but what if we flatten the X (n,k) matrix so that we can take the dot product with S (n,flat,K).
-        Xs = tf.random.uniform(shape=[self.bs, self.n, self.k], dtype=tf.float64)
-        S = tf.reshape(S, [S.shape[0],S.shape[1],-1,S.shape[-1]])
+        Xs = torch.rand([self.bs, self.n, self.k])
+        S = torch.reshape(S, [S.shape[0],S.shape[1],S.shape[-2],-1])
         for n in range(n_iterations):
-            Xs = tf.reshape(Xs, [self.bs,-1])
-            SXs = tf.keras.backend.batch_dot(S, Xs, axes=[2,1])
-            Xs = SXs / tf.norm(SXs, ord='fro', axis=[-2,-1])[:,tf.newaxis,tf.newaxis]
+            Xs = torch.reshape(Xs, [self.bs,-1]).unsqueeze(1).unsqueeze(-1)
+            SXs = torch.matmul(S,Xs).squeeze()
+            Xs = (SXs / torch.norm(SXs, dim=[-2,-1]).unsqueeze(-1).unsqueeze(-1))
         return Xs
 
     def max_pool_loop(self, S, n_iterations: int=6):
@@ -212,7 +222,6 @@ class MPGM():
         return X
 
     def hungarian(self, X_star, cost: bool=False):
-        
         """ 
         Apply the hungarian or munkres algorithm to the continuous assignment matrix.
         The output is a discrete similarity matrix.
@@ -234,11 +243,11 @@ class MPGM():
         return X
 
     def hungarian_batch(self, X):
-        X = tf.cast(X, dtype=tf.int64).numpy()
+        X = X.numpy()
         for i in range(X.shape[0]):
             # We are always given square Xs, but some may have unused columns (ground truth nodes are not there), so we can crop them for speedup. It's also then equivalent to the original non-batched version.
             row_ind, col_ind = linear_sum_assignment(X[i])
-            M = np.zeros(X[i].shape, dtype=np.float32)
+            M = np.zeros(X[i].shape, dtype=float)
             M[row_ind, col_ind] = 1
             X[i] = M
         return X
@@ -247,24 +256,25 @@ class MPGM():
 
 if __name__ == "__main__":
 
-    torch.set_default_tensor_type(torch.float64)
+    my_dtype = torch.float64
+    torch.set_default_dtype(my_dtype)
 
     # Let's define some dimensions :)
-    n = 3
+    n = 4
     k = 3
     d_e = 2
-    d_n = 3
+    d_n = 4
 
-    batch_size = 1
+    batch_size = 2
 
     # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
     np.random.seed(seed=11)
     A = np.random.randint(2, size=(batch_size,n,n))
     E = np.random.randint(2, size=(batch_size,n,n,d_e))
     F = np.random.randint(2, size=(batch_size,n,d_n))
-    A_hat = np.random.normal(size=(batch_size,k,k))
-    E_hat = np.random.normal(size=(batch_size,k,k,d_e))
-    F_hat = np.random.normal(size=(batch_size,k,d_n))
+    A_hat = torch.randn((batch_size,k,k))
+    E_hat = torch.randn((batch_size,k,k,d_e))
+    F_hat = torch.randn((batch_size,k,d_n))
 
 
     # Test the class, actually this should go in a test function and folder. Later...
@@ -274,7 +284,7 @@ if __name__ == "__main__":
     Xs = mpgm.max_pool(S)
     X = mpgm.hungarian_batch(Xs)
     print(X)
-    X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
+    X2 = mpgm.affinity_loop(np.squeeze(A[0]), np.squeeze(A_hat[0]), np.squeeze(E[0]), np.squeeze(E_hat[0]), np.squeeze(F[0]), np.squeeze(F_hat[0]))
     X2 = mpgm.max_pool_loop(X2)
     X2 = mpgm.hungarian(X2)
     print(X2)

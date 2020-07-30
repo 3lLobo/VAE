@@ -56,6 +56,7 @@ class MPGM():
         """
         Returns zero matrix fof shape (bs,n,n,k,k) with the (n.n) and (k,k) diagonal set as in S2.
         Input is the S2 (bs,n,k) diagonals.
+        TODO this is not differentiable!!!
         """
 
         X = np.zeros([bs,n,n,k,k])

@@ -31,13 +31,12 @@ def mk_random_graph(n: int, d_e: int, d_n: int, batch_size: int=1, target: bool=
 
 def mk_random_graph_ds(n: int, d_e: int, d_n: int, batches: int=1, batch_size: int=1,target: bool=True):
     """
-    Forbatches.
+    For batches.
     """
     ds = list()
     for i in range(batches):
         ds.append(mk_random_graph(n,d_e,d_n,batch_size,target))
     return ds
-
 
 
 def replace_nan(t):
@@ -46,6 +45,11 @@ def replace_nan(t):
     """
     return tf.where(tf.math.is_nan(t), tf.zeros_like(t), t)
 
+
+def torch_replace_nan(t):
+    return torch.where(torch.isnan(t), torch.zeros_like(t), t)
+
+
 def add_e7(t):
     """
     Function to add a very small value to each element, to avoid inf errors when taking the logarithm.
@@ -53,9 +57,6 @@ def add_e7(t):
     return t + tf.ones_like(t) * 1e-7
 
     
+def torch_add_e7(t):
+    return t + torch.ones_like(t) * 1e-7
 
-
-
-if __name__ == "__main__":
-    print(mk_random_graph(3,2,2,2))
-    print(mk_random_graph_ds(3,2,2,2,2)[0])

@@ -57,11 +57,11 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     term_1 = (1/k) * tf.math.reduce_sum(diag_part(A_t) * tf.math.log(diag_part(A_hat_4log)), [1], keepdims=True)
 
 
-    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.math.log(tf.ones_like(diag_part(A_hat)) - diag_part(A_hat_4log))), [1], keepdims=True) 
+    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.ones_like(diag_part(A_hat)) - tf.math.log(diag_part(A_hat_4log)))), [1], keepdims=True) 
     
     # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
     b = diag_part(A_t)
-    term_31 = set_diag(A_t, tf.zeros_like(diag_part(A_t))) * tf.math.log(set_diag(A_hat_4log, tf.zeros_like(diag_part(A_hat))))
+    term_31 = set_diag(A_t, tf.zeros_like(diag_part(A_t))) * set_diag(tf.math.log(A_hat_4log), tf.zeros_like(diag_part(A_hat)))
     term_31 = replace_nan(term_31)        # You know why!
 
     term_32 = tf.ones_like(A_t) - set_diag(A_t, tf.zeros_like(diag_part(A_t))) * tf.math.log(tf.ones_like(A_t) - set_diag(A_hat_4log, tf.zeros_like(diag_part(A_hat))))
@@ -73,9 +73,9 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
     F = tf.cast(F, dtype=tf.float64)
     A = tf.cast(A, dtype=tf.float64)
     E = tf.cast(E, dtype=tf.float64)
-    log_p_F = (1/n) * tf.expand_dims(tf.math.reduce_sum(tf.math.log(add_e7(F * F_hat_t)), [1,2]), -1)
+    log_p_F = (1/n) * tf.math.log(tf.expand_dims(tf.math.reduce_sum(add_e7(F * F_hat_t), [1,2]), -1))
 
-    log_p_E = tf.expand_dims((1/(tf.norm(A, ord='fro', axis=[-2,-1])-n)) * tf.math.reduce_sum(tf.math.log(add_e7(E * E_hat_t)),  [1,2,3]), -1)
+    log_p_E = tf.math.log(tf.expand_dims((1/(tf.norm(A, ord='fro', axis=[-2,-1])-n)) * tf.math.reduce_sum(add_e7(E * E_hat_t),  [1,2,3]), -1))
 
     log_p = - l_A * log_p_A - l_F * log_p_F - l_E * log_p_E
     return log_p
