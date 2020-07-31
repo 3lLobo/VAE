@@ -86,3 +86,4 @@ def log_normal_pdf(sample, mean, logvar, raxis=1):
     logvar = tf.cast(logvar, dtype=tf.float64)
     log2pi = tf.cast(tf.math.log(2. * np.pi), dtype=tf.float64)
     return tf.expand_dims(tf.reduce_sum(-.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi), axis=raxis), -1)
+

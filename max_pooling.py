@@ -174,7 +174,7 @@ class MPGM():
             Xs = SXs / tf.norm(SXs, ord='fro', axis=[-2,-1])[:,tf.newaxis,tf.newaxis]
         return Xs
 
-    def max_pool_loop(self, S, n_iterations: int=6):
+    def max_pool_loop(self, S, n_iterations: int=300):
         """
         Input: Affinity matrix
         Output: Soft assignment matrix
@@ -220,9 +220,9 @@ class MPGM():
         """
         m = Munkres()
         if cost:
-            X_star = make_cost_matrix(X_star)
+            X_star = make_cost_matrix(X_star.copy())
         # Compute the indexes for the matrix for the lowest cost path.        
-        indexes = m.compute(X_star)
+        indexes = m.compute(X_star.copy())
 
         # Now mast these indexes with 1 and the rest with 0.
         X = np.zeros_like(X_star, dtype=int)
@@ -230,8 +230,8 @@ class MPGM():
             X[idx] = 1
         return X
 
-    def hungarian_batch(self, X):
-        X = tf.cast(X, dtype=tf.int64).numpy()
+    def hungarian_batch(self, Xs):
+        X = tf.cast(Xs, dtype=tf.int64).numpy()
         for i in range(X.shape[0]):
             # We are always given square Xs, but some may have unused columns (ground truth nodes are not there), so we can crop them for speedup. It's also then equivalent to the original non-batched version.
             row_ind, col_ind = linear_sum_assignment(X[i])
@@ -249,15 +249,17 @@ if __name__ == "__main__":
     tf.keras.backend.set_floatx('float64')
 
     # Let's define some dimensions :)
-    n = 3
-    k = 3
+    n = 2
+    k = 2
     d_e = 2
     d_n = 3
 
     batch_size = 1
+    seed = 11
 
     # Generation of random test graphs. The target graph is discrete and the reproduced graph probabilistic.
-    np.random.seed(seed=11)
+    np.random.seed(seed=seed)
+    tf.random.set_seed(seed)
     A = np.random.randint(2, size=(batch_size,n,n))
     E = np.random.randint(2, size=(batch_size,n,n,d_e))
     F = np.random.randint(2, size=(batch_size,n,d_n))
@@ -272,8 +274,8 @@ if __name__ == "__main__":
     S = mpgm.affinity(A, A_hat, E, E_hat, F, F_hat)
     Xs = mpgm.max_pool(S)
     X = mpgm.hungarian_batch(Xs)
-    print(X)
-    X2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
-    X2 = mpgm.max_pool_loop(X2)
-    X2 = mpgm.hungarian(X2)
-    print(X2)
+    print(S)
+    S2 = mpgm.affinity_loop(np.squeeze(A), np.squeeze(A_hat), np.squeeze(E), np.squeeze(E_hat), np.squeeze(F), np.squeeze(F_hat))
+    Xs2 = mpgm.max_pool_loop(S2)
+    X2 = mpgm.hungarian(Xs2)
+    print(S2)
