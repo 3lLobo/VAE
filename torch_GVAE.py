@@ -2,9 +2,11 @@
 Graph-VAE implementation in pytorch.
 """
 
+import time
 import torch.nn as nn
 import torch
 from torch.nn import functional as F
+from torch_losses import *
 from utils import *
 
 
@@ -60,7 +62,7 @@ class TorchGVAE(nn.Module):
         a = torch.reshape(torch.tensor(A), (-1, self.n*self.n))
         e = torch.reshape(torch.tensor(E), (-1, self.n*self.n*self.ea))
         f = torch.reshape(torch.tensor(F), (-1, self.n*self.na))
-        x = torch.cat([a, e, f], dim=1).to(torch.float)
+        x = torch.cat([a, e, f], dim=1).to(my_dtype)
         mean, logstd = torch.split(self.encoder(x), self.z_dim, dim=1)
         return mean, logstd
         
@@ -86,6 +88,9 @@ class TorchGVAE(nn.Module):
 
 if __name__ == "__main__":
 
+    my_dtype = torch.float64
+    torch.set_default_dtype(my_dtype)
+
     n = 5
     d_e = 3
     d_n = 2
@@ -97,10 +102,38 @@ if __name__ == "__main__":
     test_set = mk_random_graph_ds(n, d_e, d_n, 100, batch_size=batch_size)
 
     model = TorchGVAE(n, d_e, d_n)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-    for target in train_set:
-        with tf.GradientTape() as tape:
+    for epoch in range(epochs):
+        start_time = time.time()
+
+        for target in train_set:
+            model.train()
             mean, logstd = model.encode(target)
             z = model.reparameterize(mean, logstd)
             prediction = model.decode(z)
-            print(prediction)
+
+            log_pz = log_normal_pdf(z, torch.zeros_like(z), torch.zeros_like(z))
+            log_qz_x = log_normal_pdf(z, mean, 2*logstd)
+            log_px = mpgm_loss(target, prediction)
+            loss = - torch.mean(log_px + log_pz + log_qz_x)
+            print(loss)
+            loss.backward()
+            optimiser.step()
+            end_time = time.time()
+
+        # Evaluate
+        mean_loss = []
+        with torch.no_grad():
+            model.eval()
+            for test_x in test_set:
+                mean, logstd = model.encode(target)
+                z = model.reparameterize(mean, logstd)
+                prediction = model.decode(z)
+                log_pz = log_normal_pdf(z, 0., 0.)
+                log_qz_x = log_normal_pdf(z, mean, 2*logstd)
+                log_px = mpgm_loss(target, prediction)
+                loss = - torch.mean(log_px + log_pz + log_qz_x)
+                mean_loss.append(loss)
+            print('Epoch: {}, Test set ELBO: {}, time elapse for current epoch: {}'.format(epoch, np.mean(mean_loss), end_time - start_time))
+
