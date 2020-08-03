@@ -40,7 +40,7 @@ class VanillaGVAE(Model):
                 Input(shape=[z_dim]),
                 Dense(units=h_dim*2, activation='relu'),
                 Dense(units=h_dim, activation='relu'),
-                Dense(units=(n*n + n*na + n*n*ea), activation='relu'),
+                Dense(units=(n*n + n*na + n*n*ea), activation='sigmoid'),
             ]
         )
         

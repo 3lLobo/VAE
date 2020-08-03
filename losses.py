@@ -56,8 +56,7 @@ def mpgm_loss(target, prediction, l_A=1., l_E=1., l_F=1.):
 
     term_1 = (1/k) * tf.math.reduce_sum(diag_part(A_t) * tf.math.log(diag_part(A_hat_4log)), [1], keepdims=True)
 
-
-    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.ones_like(diag_part(A_hat)) - tf.math.log(diag_part(A_hat_4log)))), [1], keepdims=True) 
+    term_2 = tf.reduce_sum((tf.ones_like(diag_part(A_t)) - diag_part(A_t)) * (tf.ones_like(diag_part(A_hat)) - tf.math.log(diag_part(A_hat_4log))), [1], keepdims=True)
     
     # TODO unsure if (1/(k*(1-k))) or ((1-k)/k) ??? Also the second sum in the paper is confusing. I am going to interpret it as matrix multiplication and sum over all elements.
     b = diag_part(A_t)

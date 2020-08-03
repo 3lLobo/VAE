@@ -42,7 +42,8 @@ class TorchGVAE(nn.Module):
                                     nn.Dropout(.2),
                                     nn.Linear(2*h_dim, h_dim),
                                     nn.ReLU(),
-                                    nn.Linear(h_dim, input_dim))
+                                    nn.Linear(h_dim, input_dim),
+                                    nn.Sigmoid())
 
         # Need to init?
         for m in self.modules():
